@@ -74,6 +74,7 @@ def transport_config(token_config: str = "", *, auth_disabled: bool = False, por
         resource_server_url="http://127.0.0.1/mcp",
         json_response=False,
         stateless_http=False,
+        cors_allow_origins=("*",),
     )
 
 
@@ -198,6 +199,65 @@ def test_write_tool_not_registered_and_does_not_call_kingdee(tmp_path: Path):
         assert fake.sessions == []
         assert fake.posts == []
     finally:
+        app.close()
+
+
+def test_options_preflight_does_not_require_bearer_and_allows_access_headers(tmp_path: Path):
+    app, _fake, _token = make_app(tmp_path)
+    try:
+        server = create_http_server("127.0.0.1", 0, app)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            url = f"http://127.0.0.1:{server.server_address[1]}/mcp"
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "Origin": "https://client.example",
+                    "Access-Control-Request-Method": "POST",
+                    "Access-Control-Request-Headers": "authorization,content-type,cf-access-client-id,cf-access-client-secret",
+                },
+                method="OPTIONS",
+            )
+            with urllib.request.urlopen(req, timeout=10) as response:
+                assert response.status == 204
+                assert response.headers["Access-Control-Allow-Origin"] == "*"
+                allow_headers = response.headers["Access-Control-Allow-Headers"].lower()
+                assert "authorization" in allow_headers
+                assert "cf-access-client-id" in allow_headers
+                assert "cf-access-client-secret" in allow_headers
+        finally:
+            server.shutdown()
+            server.server_close()
+    finally:
+        app.close()
+
+
+def test_post_response_includes_cors_headers_when_origin_present(tmp_path: Path):
+    app, _fake, token = make_app(tmp_path)
+    server = create_http_server("127.0.0.1", 0, app)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_address[1]}/mcp"
+        req = urllib.request.Request(
+            url,
+            data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Origin": "https://client.example",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
+            assert response.status == 200
+            assert response.headers["Access-Control-Allow-Origin"] == "*"
+            assert response.headers["Content-Type"].startswith("application/json")
+    finally:
+        server.shutdown()
+        server.server_close()
         app.close()
 
 

@@ -30,6 +30,7 @@ class TransportConfig:
     resource_server_url: str
     json_response: bool
     stateless_http: bool
+    cors_allow_origins: tuple[str, ...] = ("*",)
 
 
 def _bool_env(name: str, default: bool = False) -> bool:
@@ -63,6 +64,11 @@ def load_transport_config() -> TransportConfig:
 
     resource_server_url = os.getenv("MCP_RESOURCE_SERVER_URL", f"http://{host}:{port}{path}")
     issuer_url = os.getenv("MCP_AUTH_ISSUER_URL", resource_server_url)
+    cors_allow_origins = tuple(
+        item.strip()
+        for item in os.getenv("MCP_CORS_ALLOW_ORIGINS", "*").split(",")
+        if item.strip()
+    )
 
     return TransportConfig(
         transport=raw_transport,  # type: ignore[arg-type]
@@ -75,4 +81,5 @@ def load_transport_config() -> TransportConfig:
         resource_server_url=resource_server_url,
         json_response=_bool_env("MCP_JSON_RESPONSE", False),
         stateless_http=_bool_env("MCP_STATELESS_HTTP", False),
+        cors_allow_origins=cors_allow_origins,
     )

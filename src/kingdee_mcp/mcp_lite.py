@@ -231,14 +231,14 @@ def process_http_request(app: KingdeeLiteApplication, *, method: str, path: str,
         return HTTPStatus.OK, {"ok": True, "server": SERVER_NAME, "version": SERVER_VERSION, "auth": app.auth.summary()}
     if path != app.transport_config.path:
         return HTTPStatus.NOT_FOUND, {"error": "not_found"}
+    if method == "OPTIONS":
+        return HTTPStatus.NO_CONTENT, {}
     try:
         context = app.context_from_headers(headers)
     except AuthError as exc:
         return HTTPStatus.UNAUTHORIZED, {"error": "missing_or_invalid_bearer", "message": str(exc)}
     if method == "GET":
         return HTTPStatus.OK, {"ok": True, **app.initialize_result(), "auth": {"operator": context.operator, "kingdee_username": context.kingdee_username}}
-    if method == "OPTIONS":
-        return HTTPStatus.NO_CONTENT, {}
     if method != "POST":
         return HTTPStatus.METHOD_NOT_ALLOWED, {"error": "method_not_allowed"}
     try:
@@ -254,12 +254,37 @@ def process_http_request(app: KingdeeLiteApplication, *, method: str, path: str,
 def _build_http_handler(app: KingdeeLiteApplication) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
         server_version = "KingdeeMCPLite/1.0"
+        cors_allow_headers = "Authorization, Content-Type, Accept, CF-Access-Client-Id, CF-Access-Client-Secret, Mcp-Session-Id, mcp-session-id"
+        cors_allow_methods = "GET, POST, OPTIONS"
+
+        def _cors_origin(self) -> str | None:
+            origin = self.headers.get("Origin")
+            if not origin:
+                return None
+            allowed = app.transport_config.cors_allow_origins
+            if not allowed:
+                return None
+            if "*" in allowed:
+                return "*"
+            return origin if origin in allowed else None
+
+        def _send_cors_headers(self) -> None:
+            allow_origin = self._cors_origin()
+            if not allow_origin:
+                return
+            self.send_header("Access-Control-Allow-Origin", allow_origin)
+            if allow_origin != "*":
+                self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Headers", self.cors_allow_headers)
+            self.send_header("Access-Control-Allow-Methods", self.cors_allow_methods)
+            self.send_header("Access-Control-Max-Age", "300")
 
         def _send_json(self, status: int, payload: dict[str, Any]) -> None:
             body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
+            self._send_cors_headers()
             self.end_headers()
             if status != HTTPStatus.NO_CONTENT:
                 self.wfile.write(body)
@@ -276,9 +301,7 @@ def _build_http_handler(app: KingdeeLiteApplication) -> type[BaseHTTPRequestHand
         def do_OPTIONS(self) -> None:  # noqa: N802
             status, payload = process_http_request(app, method="OPTIONS", path=self.path, headers={key: value for key, value in self.headers.items()})
             self.send_response(status)
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
-            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self._send_cors_headers()
             self.send_header("Content-Length", "0")
             self.end_headers()
 

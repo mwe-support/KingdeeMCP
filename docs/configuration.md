@@ -32,6 +32,7 @@ The production command is `kingdee-mcp`, which imports `kingdee_mcp.main:main` a
 | `MCP_PATH` | yes | `/mcp` | JSON-RPC MCP endpoint path. |
 | `MCP_TOKEN_CONFIG` | yes for HTTP production | `/public/KingdeeMCP/secrets/tokens.json` | JSON file containing SHA-256 token hashes and Kingdee user mapping. |
 | `MCP_AUTH_DISABLED` | no | `false` | Set `true` only for local unauthenticated tests. Never enable in shared production. |
+| `MCP_CORS_ALLOW_ORIGINS` | no | `*` | Comma-separated browser/WebView origins allowed by the lightweight gateway. Use `*` for broad client compatibility, or an explicit list such as `http://localhost:6274,https://your-client.example.com`. With Cloudflare Access, enable `options_preflight_bypass` and leave Access-level CORS unset so the origin controls CORS consistently. |
 
 ## Concurrency Variables
 

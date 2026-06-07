@@ -77,6 +77,8 @@ Optional header when the zone has browser-oriented checks that affect API client
 User-Agent: KingdeeMCP-Client/1.0
 ```
 
+For browser or WebView MCP clients, enable `options_preflight_bypass` on the Cloudflare Access application and leave Access-level `cors_headers` unset. This lets unauthenticated `OPTIONS` preflight requests reach the lightweight MCP origin, which returns CORS headers from `MCP_CORS_ALLOW_ORIGINS`. Authenticated `POST` requests still require both Cloudflare Service Auth headers and the MCP Bearer token.
+
 ## Image
 
 The compose file uses:

@@ -216,6 +216,8 @@ Authorization: Bearer <kingdee mcp bearer token>
 
 `User-Agent: KingdeeMCP-Client/1.0` 只作为可选兼容项，用于 Cloudflare 区域存在浏览器类检查且影响 API 客户端时。
 
+浏览器或 WebView 客户端如果报 `failed fetch`，通常是 CORS 预检失败。推荐在 Cloudflare Access 应用中启用 `options_preflight_bypass`，不要再配置 Access 自身的 CORS allowlist；`OPTIONS` 会直接到达本地轻量 MCP 服务，由 `MCP_CORS_ALLOW_ORIGINS` 控制响应头。`POST` 工具调用仍然必须同时通过 Cloudflare Service Auth 和 MCP Bearer token。
+
 ## MCP 客户端配置模板
 
 远程 HTTP 客户端应连接 Cloudflare 域名，而不是服务器本地端口。示例字段名会因客户端不同而略有差异：
