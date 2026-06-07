@@ -1,4 +1,6 @@
-# 示例：质量检验单
+> Legacy note: this document references write, audit, delete, push, composite, SQL, or legacy tools that are not registered in the current lightweight production entrypoint. Use it only as future design/reference material, not as current production usage guidance.
+
+# [Legacy] 示例：质量检验单
 
 ## 查询来料检验单
 

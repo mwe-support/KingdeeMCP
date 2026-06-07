@@ -1,4 +1,6 @@
-# 示例：审批流操作
+> Legacy note: this document references write, audit, delete, push, composite, SQL, or legacy tools that are not registered in the current lightweight production entrypoint. Use it only as future design/reference material, not as current production usage guidance.
+
+# [Legacy] 示例：审批流操作
 
 ## 用户提问
 

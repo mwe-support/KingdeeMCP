@@ -12,14 +12,21 @@ import os
 import re
 import time
 from datetime import datetime
-from typing import Any, List, Literal, Optional, Callable
-from collections import defaultdict
+from typing import Annotated, Any, List, Literal, Optional, Callable
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
+from contextlib import asynccontextmanager
 
 import httpx
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.fastmcp.prompts.base import UserMessage
+from mcp.server.auth.settings import AuthSettings
 from pydantic import BaseModel, ConfigDict, Field
+
+from .auth import MappingTokenVerifier, current_operator_context
+from .config import load_service_config, load_transport_config
+from .kingdee_session import KingdeeSessionManager
 
 # ─────────────────────────────────────────────
 # 使用日志模块（改进反馈层）
@@ -90,6 +97,7 @@ def get_usage_stats() -> dict:
         "tool_stats": dict(_TOOL_STATS),
         "error_stats": dict(_ERROR_STATS),
         "log_file": os.path.join(_get_log_dir(), _USAGE_LOG_FILE),
+        "limits": _limit_snapshot(),
     }
 
 def with_usage_log(tool_name: str):
@@ -561,17 +569,324 @@ def _err(e: Exception, extra_errors: list = None, op: str = "") -> str:
 # ─────────────────────────────────────────────
 # 服务器初始化
 # ─────────────────────────────────────────────
-mcp = FastMCP("kingdee_mcp")
+# --------------------------------------------------
+# 服务器与连接配置（从环境变量读取）
+# --------------------------------------------------
+_SERVICE_CONFIG = load_service_config()
+_TRANSPORT_CONFIG = load_transport_config()
 
-# ─────────────────────────────────────────────
-# 连接配置（从环境变量读取）
-# ─────────────────────────────────────────────
-SERVER_URL = os.getenv("KINGDEE_SERVER_URL", "http://your-server/k3cloud/")
-ACCT_ID    = os.getenv("KINGDEE_ACCT_ID", "")
-USERNAME   = os.getenv("KINGDEE_USERNAME", "")
-APP_ID     = os.getenv("KINGDEE_APP_ID", "")
-APP_SEC    = os.getenv("KINGDEE_APP_SEC", "")
-LCID       = int(os.getenv("KINGDEE_LCID", "2052"))
+SERVER_URL = _SERVICE_CONFIG.server_url
+ACCT_ID    = _SERVICE_CONFIG.acct_id
+USERNAME   = _SERVICE_CONFIG.default_username
+APP_ID     = _SERVICE_CONFIG.app_id
+APP_SEC    = _SERVICE_CONFIG.app_secret
+LCID       = _SERVICE_CONFIG.lcid
+
+_TOKEN_VERIFIER = None
+_AUTH_SETTINGS = None
+if _TRANSPORT_CONFIG.token_config and not _TRANSPORT_CONFIG.auth_disabled:
+    _TOKEN_VERIFIER = MappingTokenVerifier.from_file(_TRANSPORT_CONFIG.token_config)
+    _AUTH_SETTINGS = AuthSettings(
+        issuer_url=_TRANSPORT_CONFIG.issuer_url,
+        resource_server_url=_TRANSPORT_CONFIG.resource_server_url,
+        required_scopes=[],
+    )
+
+mcp = FastMCP(
+    "kingdee_mcp",
+    host=_TRANSPORT_CONFIG.host,
+    port=_TRANSPORT_CONFIG.port,
+    streamable_http_path=_TRANSPORT_CONFIG.path,
+    token_verifier=_TOKEN_VERIFIER,
+    json_response=_TRANSPORT_CONFIG.json_response,
+    stateless_http=_TRANSPORT_CONFIG.stateless_http,
+    auth=_AUTH_SETTINGS,
+)
+
+
+# Token scopes are also used to reduce the visible tool catalog. This matters for
+# remote MCP clients because a full Kingdee tool list can be expensive to parse.
+_CORE_READ_TOOLS = frozenset({
+    "kingdee_smoke_test",
+    "kingdee_query_bills",
+    "kingdee_view_bill",
+    "kingdee_query_purchase_orders",
+    "kingdee_query_purchase_order_progress",
+    "kingdee_query_sale_orders",
+    "kingdee_query_stock_bills",
+    "kingdee_query_inventory",
+    "kingdee_query_materials",
+    "kingdee_query_partners",
+    "kingdee_list_forms",
+    "kingdee_get_fields",
+    "kingdee_query_pending_approvals",
+    "kingdee_query_workflow_status",
+})
+
+_CORE_WRITE_TOOLS = frozenset({
+    "kingdee_save_bill",
+    "kingdee_submit_bills",
+    "kingdee_audit_bills",
+    "kingdee_push_bill",
+    "kingdee_create_and_audit",
+    "kingdee_workflow_approve",
+})
+
+_CORE_TOOLS = _CORE_READ_TOOLS | _CORE_WRITE_TOOLS
+
+
+@dataclass(frozen=True)
+class LimitConfig:
+    max_concurrent_tools: int
+    max_concurrent_write_tools: int
+    max_concurrent_destructive_tools: int
+    max_concurrent_kingdee_requests: int
+    max_concurrent_tools_per_operator: int
+    tool_queue_timeout_seconds: float
+    kingdee_queue_timeout_seconds: float
+    rate_limit_global_per_minute: int
+    rate_limit_per_operator_per_minute: int
+
+
+def _int_env(name: str, default: int, minimum: int = 0) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return max(minimum, int(raw))
+    except ValueError:
+        return default
+
+
+def _float_env(name: str, default: float, minimum: float = 0.0) -> float:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return max(minimum, float(raw))
+    except ValueError:
+        return default
+
+
+_LIMIT_CONFIG = LimitConfig(
+    max_concurrent_tools=_int_env("MCP_MAX_CONCURRENT_TOOLS", 8, 1),
+    max_concurrent_write_tools=_int_env("MCP_MAX_CONCURRENT_WRITE_TOOLS", 2, 1),
+    max_concurrent_destructive_tools=_int_env("MCP_MAX_CONCURRENT_DESTRUCTIVE_TOOLS", 1, 1),
+    max_concurrent_kingdee_requests=_int_env("MCP_MAX_CONCURRENT_KINGDEE_REQUESTS", 4, 1),
+    max_concurrent_tools_per_operator=_int_env("MCP_MAX_CONCURRENT_TOOLS_PER_OPERATOR", 2, 1),
+    tool_queue_timeout_seconds=_float_env("MCP_TOOL_QUEUE_TIMEOUT_SECONDS", 3.0, 0.1),
+    kingdee_queue_timeout_seconds=_float_env("MCP_KINGDEE_QUEUE_TIMEOUT_SECONDS", 5.0, 0.1),
+    rate_limit_global_per_minute=_int_env("MCP_RATE_LIMIT_GLOBAL_PER_MINUTE", 240, 0),
+    rate_limit_per_operator_per_minute=_int_env("MCP_RATE_LIMIT_PER_OPERATOR_PER_MINUTE", 30, 0),
+)
+
+_GLOBAL_TOOL_SEMAPHORE = asyncio.Semaphore(_LIMIT_CONFIG.max_concurrent_tools)
+_WRITE_TOOL_SEMAPHORE = asyncio.Semaphore(_LIMIT_CONFIG.max_concurrent_write_tools)
+_DESTRUCTIVE_TOOL_SEMAPHORE = asyncio.Semaphore(_LIMIT_CONFIG.max_concurrent_destructive_tools)
+_KINGDEE_REQUEST_SEMAPHORE = asyncio.Semaphore(_LIMIT_CONFIG.max_concurrent_kingdee_requests)
+_OPERATOR_TOOL_SEMAPHORES: dict[str, asyncio.Semaphore] = {}
+
+
+class SlidingWindowRateLimiter:
+    def __init__(self, limit: int, window_seconds: float = 60.0):
+        self.limit = limit
+        self.window_seconds = window_seconds
+        self._events: dict[str, deque[float]] = defaultdict(deque)
+        self._lock = asyncio.Lock()
+
+    async def check(self, key: str, *, label: str) -> None:
+        if self.limit <= 0:
+            return
+        now = time.monotonic()
+        async with self._lock:
+            events = self._events[key]
+            while events and now - events[0] >= self.window_seconds:
+                events.popleft()
+            if len(events) >= self.limit:
+                retry_after = max(1, int(self.window_seconds - (now - events[0])))
+                raise ToolError(f"Rate limit exceeded for {label}; retry after {retry_after}s")
+            events.append(now)
+
+
+_GLOBAL_RATE_LIMITER = SlidingWindowRateLimiter(_LIMIT_CONFIG.rate_limit_global_per_minute)
+_OPERATOR_RATE_LIMITER = SlidingWindowRateLimiter(_LIMIT_CONFIG.rate_limit_per_operator_per_minute)
+
+
+@asynccontextmanager
+async def _acquire_limited_slot(semaphore: asyncio.Semaphore, timeout_seconds: float, label: str):
+    try:
+        await asyncio.wait_for(semaphore.acquire(), timeout=timeout_seconds)
+    except TimeoutError as exc:
+        raise ToolError(f"Server is busy: {label}; retry later") from exc
+    try:
+        yield
+    finally:
+        semaphore.release()
+
+
+def _operator_limit_key() -> str:
+    try:
+        context = current_operator_context(USERNAME)
+        return context.operator or context.kingdee_username or "anonymous"
+    except Exception:
+        return "anonymous"
+
+
+def _operator_tool_semaphore(operator_key: str) -> asyncio.Semaphore:
+    semaphore = _OPERATOR_TOOL_SEMAPHORES.get(operator_key)
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(_LIMIT_CONFIG.max_concurrent_tools_per_operator)
+        _OPERATOR_TOOL_SEMAPHORES[operator_key] = semaphore
+    return semaphore
+
+
+def _is_write_tool(annotations: Any) -> bool:
+    return not _annotation_flag(annotations, "readOnlyHint", False)
+
+
+def _is_destructive_tool(annotations: Any) -> bool:
+    return _annotation_flag(annotations, "destructiveHint", False)
+
+
+async def _check_tool_rate_limits(operator_key: str) -> None:
+    await _GLOBAL_RATE_LIMITER.check("global", label="global MCP calls")
+    await _OPERATOR_RATE_LIMITER.check(operator_key, label=f"operator {operator_key}")
+
+
+async def _run_with_tool_limits(tool_info: Any, operator_key: str, func: Callable[[], Any]) -> Any:
+    async with _acquire_limited_slot(
+        _GLOBAL_TOOL_SEMAPHORE,
+        _LIMIT_CONFIG.tool_queue_timeout_seconds,
+        "global MCP tool concurrency",
+    ):
+        async with _acquire_limited_slot(
+            _operator_tool_semaphore(operator_key),
+            _LIMIT_CONFIG.tool_queue_timeout_seconds,
+            "per-operator MCP tool concurrency",
+        ):
+            if _is_destructive_tool(tool_info.annotations):
+                async with _acquire_limited_slot(
+                    _DESTRUCTIVE_TOOL_SEMAPHORE,
+                    _LIMIT_CONFIG.tool_queue_timeout_seconds,
+                    "destructive tool concurrency",
+                ):
+                    return await func()
+            if _is_write_tool(tool_info.annotations):
+                async with _acquire_limited_slot(
+                    _WRITE_TOOL_SEMAPHORE,
+                    _LIMIT_CONFIG.tool_queue_timeout_seconds,
+                    "write tool concurrency",
+                ):
+                    return await func()
+            return await func()
+
+
+def _limit_snapshot() -> dict[str, Any]:
+    return {
+        "max_concurrent_tools": _LIMIT_CONFIG.max_concurrent_tools,
+        "max_concurrent_write_tools": _LIMIT_CONFIG.max_concurrent_write_tools,
+        "max_concurrent_destructive_tools": _LIMIT_CONFIG.max_concurrent_destructive_tools,
+        "max_concurrent_kingdee_requests": _LIMIT_CONFIG.max_concurrent_kingdee_requests,
+        "max_concurrent_tools_per_operator": _LIMIT_CONFIG.max_concurrent_tools_per_operator,
+        "tool_queue_timeout_seconds": _LIMIT_CONFIG.tool_queue_timeout_seconds,
+        "kingdee_queue_timeout_seconds": _LIMIT_CONFIG.kingdee_queue_timeout_seconds,
+        "rate_limit_global_per_minute": _LIMIT_CONFIG.rate_limit_global_per_minute,
+        "rate_limit_per_operator_per_minute": _LIMIT_CONFIG.rate_limit_per_operator_per_minute,
+    }
+
+
+async def _run_with_kingdee_limit(func: Callable[[], Any]) -> Any:
+    async with _acquire_limited_slot(
+        _KINGDEE_REQUEST_SEMAPHORE,
+        _LIMIT_CONFIG.kingdee_queue_timeout_seconds,
+        "Kingdee WebAPI concurrency",
+    ):
+        return await func()
+
+
+def _annotation_flag(annotations: Any, name: str, default: bool = False) -> bool:
+    if annotations is None:
+        return default
+    if isinstance(annotations, dict):
+        return bool(annotations.get(name, default))
+    return bool(getattr(annotations, name, default))
+
+
+def _tool_allowed_by_scopes(tool_name: str, annotations: Any, allowed_tools: frozenset[str]) -> bool:
+    if not allowed_tools:
+        return False
+    if "all" in allowed_tools or "*" in allowed_tools or "high" in allowed_tools:
+        return True
+    if tool_name in allowed_tools:
+        return True
+
+    # Keep default remote clients small: read/write are curated profiles, not
+    # broad permission groups. Use high/all or explicit tool names for full access.
+    if "core" in allowed_tools and tool_name in _CORE_TOOLS:
+        return True
+    if "read" in allowed_tools and tool_name in _CORE_READ_TOOLS:
+        return True
+    if "write" in allowed_tools and tool_name in _CORE_TOOLS:
+        return True
+    return False
+
+
+def _current_allowed_tool_scopes() -> frozenset[str]:
+    if _TOKEN_VERIFIER is None or _TRANSPORT_CONFIG.auth_disabled:
+        return frozenset({"all"})
+    return current_operator_context(USERNAME).allowed_tools
+
+
+def _filter_tools_for_scopes(tools: list[Any], allowed_tools: frozenset[str]) -> list[Any]:
+    return [
+        tool
+        for tool in tools
+        if _tool_allowed_by_scopes(tool.name, tool.annotations, allowed_tools)
+    ]
+
+
+_original_tool_manager_list_tools = mcp._tool_manager.list_tools
+_original_tool_manager_call_tool = mcp._tool_manager.call_tool
+
+
+def _filtered_tool_manager_list_tools():
+    return _filter_tools_for_scopes(
+        _original_tool_manager_list_tools(),
+        _current_allowed_tool_scopes(),
+    )
+
+
+async def _guarded_tool_manager_call_tool(
+    name: str,
+    arguments: dict[str, Any],
+    context: Any | None = None,
+    convert_result: bool = False,
+):
+    allowed_tools = _current_allowed_tool_scopes()
+    tool_info = mcp._tool_manager.get_tool(name)  # FastMCP has no public annotation lookup API.
+    if tool_info is None:
+        raise ToolError(f"Unknown tool: {name}")
+    if not _tool_allowed_by_scopes(name, tool_info.annotations, allowed_tools):
+        raise ToolError(f"Tool is not allowed for this bearer token: {name}")
+
+    operator_key = _operator_limit_key()
+    await _check_tool_rate_limits(operator_key)
+
+    async def _call_original():
+        return await _original_tool_manager_call_tool(
+            name,
+            arguments,
+            context=context,
+            convert_result=convert_result,
+        )
+
+    return await _run_with_tool_limits(tool_info, operator_key, _call_original)
+
+
+# FastMCP binds protocol handlers during initialization. Patch the ToolManager
+# layer because the bound handlers call through it at request time.
+mcp._tool_manager.list_tools = _filtered_tool_manager_list_tools
+mcp._tool_manager.call_tool = _guarded_tool_manager_call_tool
 
 # ─────────────────────────────────────────────
 # SQL Server 探查配置（可选，从环境变量读取）
@@ -638,6 +953,92 @@ async def kingdee_usage_stats() -> str:
     return json.dumps(get_usage_stats(), ensure_ascii=False, indent=2)
 
 
+
+
+
+@mcp.tool(
+    name="kingdee_smoke_test",
+    title="Kingdee MCP smoke test",
+    description=(
+        "Check MCP authentication, mapped Kingdee user login, service limits, "
+        "and optionally run a tiny read-only Kingdee Query request."
+    ),
+    annotations={
+        "title": "Kingdee MCP smoke test",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+)
+async def kingdee_smoke_test(
+    run_query: Annotated[
+        bool,
+        Field(description="Whether to run a tiny read-only Kingdee Query request."),
+    ] = True,
+    form_id: Annotated[
+        str,
+        Field(description="Kingdee form id used for the optional Query request."),
+    ] = "STK_Inventory",
+    field_keys: Annotated[
+        str,
+        Field(description="Comma-separated Kingdee Query field keys."),
+    ] = "FMaterialId.FNumber,FMaterialId.FName,FStockId.FName,FBaseQty",
+    filter_string: Annotated[
+        str,
+        Field(description="Kingdee Query filter string."),
+    ] = "FBaseQty > 0",
+    limit: Annotated[
+        int,
+        Field(ge=1, le=5, description="Maximum rows for the optional Query request, from 1 to 5."),
+    ] = 1,
+) -> str:
+    """Check MCP auth, Kingdee session, and a tiny read-only query."""
+    started = time.perf_counter()
+    result: dict[str, Any] = {"ok": False, "checks": {}, "limits": _limit_snapshot()}
+
+    try:
+        context = _current_context()
+        result["operator"] = context.operator
+        result["kingdee_username"] = context.kingdee_username
+        result["allowed_tools"] = sorted(context.allowed_tools)
+        result["visible_tool_count"] = len(mcp._tool_manager.list_tools())
+        result["checks"]["auth_context"] = "ok"
+    except Exception as exc:
+        result["checks"]["auth_context"] = f"error: {type(exc).__name__}: {str(exc)[:160]}"
+        result["duration_ms"] = round((time.perf_counter() - started) * 1000, 2)
+        return _fmt(result)
+
+    try:
+        await _session_for_context(context)
+        result["checks"]["kingdee_session"] = "ok"
+    except Exception as exc:
+        result["checks"]["kingdee_session"] = f"error: {type(exc).__name__}: {str(exc)[:160]}"
+        result["duration_ms"] = round((time.perf_counter() - started) * 1000, 2)
+        return _fmt(result)
+
+    if run_query:
+        try:
+            payload = _query_payload(form_id, field_keys, filter_string, str(), 0, limit)
+            query_result = await _post("query", payload)
+            rows = _rows(query_result)
+            result["checks"]["query"] = "ok"
+            result["query"] = {
+                "form_id": form_id,
+                "limit": limit,
+                "row_count": len(rows),
+                "has_more": len(rows) == limit,
+            }
+        except Exception as exc:
+            result["checks"]["query"] = f"error: {type(exc).__name__}: {str(exc)[:240]}"
+    else:
+        result["checks"]["query"] = "skipped"
+
+    result["ok"] = all(str(v) == "ok" or str(v) == "skipped" for v in result["checks"].values())
+    result["duration_ms"] = round((time.perf_counter() - started) * 1000, 2)
+    return _fmt(result)
+
+
 # WebAPI 端点路径
 _EP = {
     "login":   "Kingdee.BOS.WebApi.ServicesStub.AuthService.LoginByAppSecret.common.kdsvc",
@@ -658,8 +1059,35 @@ _EP = {
     "metadata":    "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.QueryBusinessInfo.common.kdsvc",
 }
 
+_SESSION_MANAGER = KingdeeSessionManager(_SERVICE_CONFIG, lambda: _url("login"))
+
 # Session 缓存（避免每次请求都重新登录）
 _session_id: Optional[str] = None
+
+
+def _current_context():
+    return current_operator_context(default_kingdee_username=USERNAME)
+
+
+async def _session_for_context(context=None) -> str:
+    context = context or _current_context()
+    return await _SESSION_MANAGER.get_session(context.kingdee_username)
+
+
+async def _refresh_session_for_context(context=None) -> str:
+    context = context or _current_context()
+    session = await _SESSION_MANAGER.refresh_session(context.kingdee_username)
+    global _session_id
+    if context.kingdee_username == USERNAME:
+        _session_id = session
+    return session
+
+
+def _is_session_expired_response(resp: httpx.Response) -> bool:
+    return resp.status_code == 401 or (
+        resp.status_code == 200 and
+        ("会话" in resp.text or "session" in resp.text.lower())
+    )
 
 # ─────────────────────────────────────────────
 # 元数据缓存（用于自动纠错）
@@ -727,6 +1155,63 @@ class MetadataValidator:
             return ""
         return f"FieldType={ft}" + (f",ElementType={et}" if et is not None else "")
 
+    def _parse_legacy_metadata_entity(self, entity: Any) -> None:
+        """Parse the older MetadataEntity.Fields shape used by local tests."""
+        if not isinstance(entity, dict):
+            return
+
+        for f in entity.get("Fields", []) or []:
+            fkey = f.get("Key") or f.get("Name")
+            if not fkey:
+                continue
+            field_type = f.get("FieldType")
+            if isinstance(field_type, dict):
+                field_type_name = str(field_type.get("Name", ""))
+                field_type_key = str(field_type.get("Key", ""))
+            else:
+                field_type_name = self._field_type_label(f)
+                field_type_key = str(field_type or "")
+            caption = f.get("Caption") or self._zh_name(f.get("Name", []))
+            is_entry = field_type_name == "Entry" or bool(f.get("Fields"))
+
+            if is_entry:
+                children = []
+                for child in f.get("Fields", []) or []:
+                    ckey = child.get("Key") or child.get("Name")
+                    if not ckey:
+                        continue
+                    child_type = child.get("FieldType")
+                    if isinstance(child_type, dict):
+                        child_type_name = str(child_type.get("Name", ""))
+                        child_type_key = str(child_type.get("Key", ""))
+                    else:
+                        child_type_name = self._field_type_label(child)
+                        child_type_key = str(child_type or "")
+                    children.append(FieldDef(
+                        name=ckey,
+                        caption=child.get("Caption") or self._zh_name(child.get("Name", [])),
+                        field_type=child_type_name,
+                        field_type_key=child_type_key,
+                        must_input=bool(child.get("MustInput")),
+                    ))
+                self.fields[fkey] = FieldDef(
+                    name=fkey,
+                    caption=caption,
+                    field_type=field_type_name,
+                    field_type_key=field_type_key,
+                    is_entry=True,
+                    children=children,
+                )
+            else:
+                self.fields[fkey] = FieldDef(
+                    name=fkey,
+                    caption=caption,
+                    field_type=field_type_name,
+                    field_type_key=field_type_key,
+                    must_input=bool(f.get("MustInput")),
+                    is_entry=False,
+                )
+
     def _parse_fields(self):
         """解析所有字段定义（适配 QueryBusinessInfo 实际返回结构）
 
@@ -735,8 +1220,10 @@ class MetadataValidator:
           - 其他 ParentKey=None 的 Entry → 分录/子单头
           - ParentKey != None → 子分录（暂作为父分录的子集忽略）
         """
-        nrd = self.metadata.get("Result", {}).get("NeedReturnData")
+        result = self.metadata.get("Result", {})
+        nrd = result.get("NeedReturnData")
         if not isinstance(nrd, dict):
+            self._parse_legacy_metadata_entity(result.get("MetadataEntity"))
             return
 
         for ent in nrd.get("Entrys", []) or []:
@@ -883,7 +1370,7 @@ async def _query_metadata(form_id: str) -> Optional[dict]:
     Returns:
         元数据字典，失败返回 None
     """
-    global _METADATA_CACHE, _session_id
+    global _METADATA_CACHE
 
     # 检查缓存
     if form_id in _METADATA_CACHE:
@@ -902,27 +1389,28 @@ async def _query_metadata(form_id: str) -> Optional[dict]:
                 },
             )
 
-        async with httpx.AsyncClient(timeout=30, proxy=None,
-                                      transport=httpx.AsyncHTTPTransport(http1=True)) as client:
-            if not _session_id:
-                await _login()
+        context = _current_context()
 
-            resp = await _do_post(_session_id, client)
+        async def _send_metadata_request() -> Any:
+            async with httpx.AsyncClient(timeout=30, proxy=None,
+                                          transport=httpx.AsyncHTTPTransport(http1=True)) as client:
+                session = await _session_for_context(context)
 
-            # session 过期则重新登录重试一次
-            if resp.status_code == 401 or (
-                resp.status_code == 200 and
-                ("会话" in resp.text or "session" in resp.text.lower())
-            ):
-                await _login()
-                resp = await _do_post(_session_id, client)
+                resp = await _do_post(session, client)
 
-            resp.raise_for_status()
-            result = resp.json()
+                # session ???????????
+                if _is_session_expired_response(resp):
+                    session = await _refresh_session_for_context(context)
+                    resp = await _do_post(session, client)
 
-            # 缓存结果
-            _METADATA_CACHE[form_id] = result
-            return result
+                resp.raise_for_status()
+                return resp.json()
+
+        result = await _run_with_kingdee_limit(_send_metadata_request)
+
+        # ????
+        _METADATA_CACHE[form_id] = result
+        return result
     except Exception:
         return None
 
@@ -1521,29 +2009,21 @@ def _url(ep_key: str) -> str:
     return SERVER_URL.rstrip("/") + "/" + _EP[ep_key]
 
 
-async def _login() -> str:
+async def _login(kingdee_username: Optional[str] = None) -> str:
     """登录金蝶，返回 SessionId，失败抛异常"""
     global _session_id
-    payload = {"parameters": [ACCT_ID, USERNAME, APP_ID, APP_SEC, LCID]}
-    # 💡 REMEMBER: httpx 0.28+ 默认 HTTP/2，金蝶不支持，必须显式传 http1=True，否则全 502
-    async with httpx.AsyncClient(timeout=30, proxy=None,
-                                  transport=httpx.AsyncHTTPTransport(http1=True)) as client:
-        resp = await client.post(
-            _url("login"),
-            json=payload,
-            headers={"Content-Type": "application/json"},
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        if data.get("LoginResultType") != 1:
-            raise RuntimeError(f"金蝶登录失败: {data.get('Message', '未知错误')}")
-        _session_id = data["KDSVCSessionId"]
-        return _session_id
+    if kingdee_username:
+        session = await _SESSION_MANAGER.refresh_session(kingdee_username)
+        if kingdee_username == USERNAME:
+            _session_id = session
+        return session
+    session = await _refresh_session_for_context()
+    _session_id = session
+    return session
 
 
 async def _post(ep_key: str, payload: Any) -> Any:
     """带自动重新登录的 API 调用（用于 Query 等只读操作）"""
-    global _session_id
     start_time = time.perf_counter()
 
     # Query 的 payload 已是 dict（由 _query_payload 返回）
@@ -1556,13 +2036,16 @@ async def _post(ep_key: str, payload: Any) -> Any:
         form_id = request_data.get("FormId", "")
 
     # 记录 API 调用日志
+    context = _current_context()
     api_params = {
         "ep_key": ep_key,
         "form_id": form_id if form_id else "",
         "payload_keys": list(request_data.keys()),
+        "operator": context.operator,
+        "kingdee_username": context.kingdee_username,
     }
 
-    async def _do_post(session: str) -> httpx.Response:
+    async def _do_post(session: str, client: httpx.AsyncClient) -> httpx.Response:
         # 所有 API 都用 form-urlencoded + JSON string 格式
         return await client.post(
             _url(ep_key),
@@ -1575,25 +2058,24 @@ async def _post(ep_key: str, payload: Any) -> Any:
     success = False
     error_msg = ""
     try:
-        async with httpx.AsyncClient(timeout=30, proxy=None,
-                                      transport=httpx.AsyncHTTPTransport(http1=True)) as client:
-            # 没有 session 先登录
-            if not _session_id:
-                await _login()
+        async def _send_request() -> Any:
+            async with httpx.AsyncClient(timeout=30, proxy=None,
+                                          transport=httpx.AsyncHTTPTransport(http1=True)) as client:
+                session = await _session_for_context(context)
 
-            resp = await _do_post(_session_id)
+                resp = await _do_post(session, client)
 
-            # session 过期则重新登录重试一次
-            if resp.status_code == 401 or (
-                resp.status_code == 200 and
-                ("会话" in resp.text or "session" in resp.text.lower())
-            ):
-                await _login()
-                resp = await _do_post(_session_id)
+                # session ???????????
+                if _is_session_expired_response(resp):
+                    session = await _refresh_session_for_context(context)
+                    resp = await _do_post(session, client)
 
-            resp.raise_for_status()
-            success = True
-            return resp.json()
+                resp.raise_for_status()
+                return resp.json()
+
+        result = await _run_with_kingdee_limit(_send_request)
+        success = True
+        return result
     except Exception as e:
         error_msg = str(e)[:200]
         raise
@@ -1620,14 +2102,16 @@ async def _post_raw(ep_key: str, form_id: str, model: dict,
     - Save/View/Submit/Audit/Delete: data={"Model": {...}, NeedUpDateFields:[], ...}
     - Push: data={"TargetFormId":"...","Numbers":[...],"RuleId":"..."}  （无 Model 包装）
     """
-    global _session_id
     start_time = time.perf_counter()
 
     # 记录 API 调用参数
+    context = _current_context()
     api_params = {
         "ep_key": ep_key,
         "form_id": form_id,
         "model_keys": list(model.keys()) if isinstance(model, dict) else [],
+        "operator": context.operator,
+        "kingdee_username": context.kingdee_username,
     }
 
     # Push: data 直接放字段，不需要 Model 包装
@@ -1663,37 +2147,37 @@ async def _post_raw(ep_key: str, form_id: str, model: dict,
     success = False
     error_msg = ""
     try:
-        async with httpx.AsyncClient(timeout=30, proxy=None,
-                                      transport=httpx.AsyncHTTPTransport(http1=True)) as client:
-            if not _session_id:
-                await _login()
+        async def _send_raw_request() -> Any:
+            async with httpx.AsyncClient(timeout=30, proxy=None,
+                                          transport=httpx.AsyncHTTPTransport(http1=True)) as client:
+                session = await _session_for_context(context)
 
-            resp = await client.post(
-                _url(ep_key),
-                content=body_str.encode("utf-8"),
-                headers={
-                    "Content-Type": "application/json; charset=utf-8",
-                    "Cookie": f"kdservice-sessionid={_session_id}",
-                },
-            )
-
-            if resp.status_code == 401 or (
-                resp.status_code == 200 and
-                ("会话" in resp.text or "session" in resp.text.lower())
-            ):
-                await _login()
                 resp = await client.post(
                     _url(ep_key),
                     content=body_str.encode("utf-8"),
                     headers={
                         "Content-Type": "application/json; charset=utf-8",
-                        "Cookie": f"kdservice-sessionid={_session_id}",
+                        "Cookie": f"kdservice-sessionid={session}",
                     },
                 )
 
-            resp.raise_for_status()
-            success = True
-            return resp.json()
+                if _is_session_expired_response(resp):
+                    session = await _refresh_session_for_context(context)
+                    resp = await client.post(
+                        _url(ep_key),
+                        content=body_str.encode("utf-8"),
+                        headers={
+                            "Content-Type": "application/json; charset=utf-8",
+                            "Cookie": f"kdservice-sessionid={session}",
+                        },
+                    )
+
+                resp.raise_for_status()
+                return resp.json()
+
+        result = await _run_with_kingdee_limit(_send_raw_request)
+        success = True
+        return result
     except Exception as e:
         error_msg = str(e)[:200]
         raise
@@ -2617,7 +3101,7 @@ async def kingdee_submit_bills(params: BillIdsInput) -> str:
             "op": "submit", "success": len(failed) == 0,
             "total": len(params.bill_ids),
             "succeeded_count": len(succeeded), "failed_count": len(failed),
-            "succeeded_ids": succeeded, "failed_details": failed,
+            "succeeded_ids": succeeded, "bill_ids": succeeded, "failed_details": failed,
             "next_action": "audit" if len(succeeded) > 0 else None,
             "next_action_desc": "建议调用 kingdee_audit_bills 审核已提交单据" if succeeded else None,
         })
@@ -2654,7 +3138,8 @@ async def kingdee_audit_bills(params: BillIdsInput) -> str:
             "op": "audit", "success": len(failed) == 0,
             "total": len(params.bill_ids),
             "succeeded_count": len(succeeded), "failed_count": len(failed),
-            "succeeded_ids": succeeded, "failed_details": failed,
+            "succeeded_ids": succeeded, "bill_ids": succeeded, "failed_details": failed,
+            "next_action": None,
             "tip": "单据已审核生效。如需修改，请先调用 kingdee_unaudit_bills 反审核" if succeeded else None,
         })
     except Exception as e:
@@ -2690,7 +3175,8 @@ async def kingdee_unaudit_bills(params: BillIdsInput) -> str:
             "op": "unaudit", "success": len(failed) == 0,
             "total": len(params.bill_ids),
             "succeeded_count": len(succeeded), "failed_count": len(failed),
-            "succeeded_ids": succeeded, "failed_details": failed,
+            "succeeded_ids": succeeded, "bill_ids": succeeded, "failed_details": failed,
+            "next_action": None,
             "tip": "已反审核，可修改后重新提交+审核" if succeeded else None,
         })
     except Exception as e:
@@ -2726,7 +3212,7 @@ async def kingdee_delete_bills(params: BillIdsInput) -> str:
             "op": "delete", "success": len(failed) == 0,
             "total": len(params.bill_ids),
             "succeeded_count": len(succeeded), "failed_count": len(failed),
-            "succeeded_ids": succeeded, "failed_details": failed,
+            "succeeded_ids": succeeded, "bill_ids": succeeded, "failed_details": failed,
             "tip": "已删除成功的单据不可恢复，请重新创建" if succeeded else None,
         })
     except Exception as e:
@@ -5903,7 +6389,11 @@ def main():
     import sys
     if len(sys.argv) > 1 and sys.argv[1] in ("--check", "check"):
         sys.exit(_run_check())
-    mcp.run()
+    transport = _TRANSPORT_CONFIG.transport
+    if transport == "streamable-http" and not _TRANSPORT_CONFIG.token_config and not _TRANSPORT_CONFIG.auth_disabled:
+        print("[FAIL] MCP_TRANSPORT=streamable-http requires MCP_TOKEN_CONFIG, or set MCP_AUTH_DISABLED=true for local-only testing.")
+        sys.exit(5)
+    mcp.run(transport=transport)
 
 
 if __name__ == "__main__":

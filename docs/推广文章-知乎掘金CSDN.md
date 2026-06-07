@@ -1,125 +1,137 @@
-# 金蝶云星空 MCP Server：让 Claude、Cursor 等 AI 直接操作 ERP
+# 金蝶云星空 MCP 轻量网关：让 AI 安全查询 ERP 数据
 
-> 本文介绍如何通过 MCP（Model Context Protocol）协议，让 AI 助手直接操作金蝶云星空 ERP，实现采购、销售、库存等业务的自然语言自动化。
+本文介绍当前 KingdeeMCP 的 lightweight 生产实现：通过 MCP（Model Context Protocol）让 Claude、Cursor、Windsurf、Cline 等客户端访问金蝶云星空 K/3 Cloud WebAPI。
 
-## 背景
+当前生产版本聚焦安全和稳定：只暴露 14 个核心只读工具，MCP 服务只监听 `127.0.0.1:8199`，远程访问通过 Cloudflare Tunnel/Access 进入。
 
-你有没有遇到过这种场景：
+## 适合解决什么问题
 
-- 业务人员需要查询本月采购订单，要在金蝶里点好几层菜单
-- 想批量审核一批入库单，需要一条条手动操作
-- 想用 AI 帮你处理 ERP 数据，但 AI 根本不认识金蝶
+- 业务人员想快速查询采购订单、销售订单、库存、物料、客户和供应商。
+- 实施人员想用自然语言验证金蝶 WebAPI 配置和字段。
+- 管理员希望不同 MCP token 映射到不同金蝶用户，继续沿用金蝶原有角色和权限。
+- 运维希望 MCP 服务轻量、低内存、无 FastMCP/uvicorn/SSE 长连接负担。
 
-**金蝶 MCP Server** 就是为了解决这个问题而生的。
+## 当前生产能力
 
-## 什么是 MCP？
+当前 lightweight 入口注册 14 个只读工具：
 
-MCP（Model Context Protocol）是 Anthropic 推出的开放协议，让 AI 助手（Claude、Cursor、Windsurf 等）可以通过标准化接口调用外部工具和服务。
+- `kingdee_smoke_test`
+- `kingdee_query_bills`
+- `kingdee_view_bill`
+- `kingdee_query_purchase_orders`
+- `kingdee_query_purchase_order_progress`
+- `kingdee_query_sale_orders`
+- `kingdee_query_stock_bills`
+- `kingdee_query_inventory`
+- `kingdee_query_materials`
+- `kingdee_query_partners`
+- `kingdee_list_forms`
+- `kingdee_get_fields`
+- `kingdee_query_pending_approvals`
+- `kingdee_query_workflow_status`
 
-简单理解：**MCP = 给 AI 装上操作外部系统的"手"**。
+写入、提交、审核、反审核、删除、下推、SQL 探查不属于第一版 lightweight 生产工具面。
 
-## 金蝶 MCP Server 能做什么？
+## 认证模型
 
-安装后，你可以直接对 AI 说：
+KingdeeMCP 自身使用 Bearer Token 认证。每个 token 在 `MCP_TOKEN_CONFIG` 中映射到：
 
-- "查询最近 20 条已审核的采购订单"
-- "查一下物料编码 MAT001 的即时库存"
-- "帮我新建一张采购订单，供应商 S001，物料 MAT001，数量 100"
-- "审核这几张入库单：12345, 12346"
-
-AI 会自动调用金蝶 WebAPI 完成操作，**无需手动登录 ERP 界面**。
-
-## 对实施与开发的价值
-
-**实施阶段**
-- 快速验证配置：用自然语言直接查数据，无需逐层点菜单
-- 数据核查：批量查询单据状态、库存数量，快速定位问题
-- 客户演示：现场说"查一下你们的采购订单"，AI 实时返回结果，演示效果直观
-
-**日常使用**
-- 业务人员自助查询，减少依赖实施人员的频率
-- 批量提交、审核单据，替代重复的手工操作
-- 通过微信 / WhatsApp 直接操作金蝶，无需打开 ERP 客户端
-
-**开发阶段**
-- 用 `kingdee_list_forms`、`kingdee_get_fields` 快速探索表单结构，替代翻文档
-- 自然语言调试接口，比手写 API 请求效率更高
-- 可作为内部工具基础进行二次开发，快速扩展自定义工具
-
-## 支持的功能
-
-目前提供 20 个工具，覆盖核心业务场景：
-
-**数据查询（只读）**
-- 通用单据查询（支持任意 form_id）
-- 查看单据详情
-- 采购订单查询
-- 销售订单查询
-- 出入库单据查询
-- 即时库存查询
-- 物料档案查询
-- 客户/供应商档案查询
-
-**单据操作（写入）**
-- 新建/修改单据
-- 提交、审核、反审核、删除
-
-## 支持的 AI 客户端
-
-- **Claude Desktop**（最推荐，原生支持）
-- **Cursor**（写代码的同时查 ERP 数据）
-- **Windsurf**
-- **Cline**
-- **Continue**
-- **Claude Code CLI**
-- **OpenClaw**（通过微信/WhatsApp/Telegram 操作金蝶！将本项目 PyPI 地址发给 OpenClaw，它会自动完成安装并引导填写金蝶配置）
-
-## 快速开始
-
-### 1. 安装
-
-```bash
-pip install kingdee-mcp
+```json
+{
+  "operator": "zhangsan",
+  "kingdee_username": "zhangsan",
+  "enabled": true,
+  "allowed_tools": ["read"]
+}
 ```
 
-### 2. 金蝶后台授权
+- `operator` 是 MCP 调用方身份。
+- `kingdee_username` 是真正用于 `LoginByAppSecret` 的金蝶用户。
+- 金蝶自身的角色、功能权限、数据权限继续生效。
 
-进入 **系统管理 → 第三方系统登录授权 → 新增**，创建集成用户，获取 AppID 和 AppSecret。
+## 安全部署建议
 
-### 3. 配置 Claude Desktop
+`.env` 中保持：
 
-编辑 `%APPDATA%\Claude\claude_desktop_config.json`：
+```env
+MCP_TRANSPORT=streamable-http
+MCP_HOST=127.0.0.1
+MCP_PORT=8199
+MCP_PATH=/mcp
+MCP_AUTH_DISABLED=false
+```
+
+不要把 MCP origin 直接暴露到公网。外部访问建议使用 Cloudflare Tunnel/Access，并在客户端同时传：
+
+```text
+Authorization: Bearer <kingdee mcp bearer token>
+CF-Access-Client-Id: <cloudflare access client id>
+CF-Access-Client-Secret: <cloudflare access client secret>
+```
+
+`User-Agent: KingdeeMCP-Client/1.0` 只作为 Cloudflare 浏览器类检查影响 API 客户端时的可选兼容项。
+
+## 快速安装
+
+```bash
+cd /public/KingdeeMCP
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -e .
+cp .env.example .env
+chmod 600 .env
+```
+
+生成只读 token：
+
+```bash
+kingdee-mcp-token create \
+  --operator zhangsan \
+  --kingdee-username zhangsan \
+  --allow read \
+  --config /public/KingdeeMCP/secrets/tokens.json
+```
+
+启动 systemd：
+
+```bash
+sudo /public/KingdeeMCP/scripts/install_systemd_service.sh
+sudo systemctl restart kingdee-mcp.service
+curl -sS http://127.0.0.1:8199/healthz
+```
+
+## 客户端示例
 
 ```json
 {
   "mcpServers": {
     "kingdee": {
-      "command": "uvx",
-      "args": ["kingdee-mcp"],
-      "env": {
-        "KINGDEE_SERVER_URL": "http://your-server/k3cloud/",
-        "KINGDEE_ACCT_ID": "你的账套ID",
-        "KINGDEE_USERNAME": "集成用户名",
-        "KINGDEE_APP_ID": "AppID",
-        "KINGDEE_APP_SEC": "AppSecret"
+      "type": "http",
+      "url": "https://your-cloudflare-domain.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer <kingdee-mcp-token>",
+        "CF-Access-Client-Id": "<cloudflare-access-client-id>",
+        "CF-Access-Client-Secret": "<cloudflare-access-client-secret>"
       }
     }
   }
 }
 ```
 
-### 4. 重启客户端，开始使用
+## 典型问题
 
-> **OpenClaw 用户**：使用 `openclaw mcp set` 配置后会自动热加载，**无需重启网关**。
+可以直接问 AI：
+
+- 查询最近 20 条已审核的采购订单。
+- 查一下有库存的前 20 条记录。
+- 查询某个客户的销售订单。
+- 查看 `STK_Inventory` 有哪些推荐字段。
+- 验证当前 token 映射的金蝶用户能否登录。
 
 ## 项目地址
 
-- GitHub：https://github.com/WaHaiLong/KingdeeMCP
-- 官网文档：https://wahailong.github.io/KingdeeMCP/
-- PyPI：https://pypi.org/project/kingdee-mcp/
+- GitHub: https://github.com/WaHaiLong/KingdeeMCP
+- PyPI: https://pypi.org/project/kingdee-mcp/
+- MCP 协议: https://modelcontextprotocol.io/
 
-欢迎 Star、Issues 和 PR！
-
----
-
-**关键词**：金蝶MCP、金蝶云星空AI、MCP Server、金蝶ERP自动化、Claude金蝶、金蝶API集成、AI操作ERP
+关键词：金蝶 MCP、金蝶云星空 AI、MCP Server、金蝶 ERP 查询、Cloudflare Access、Bearer Token、轻量 MCP 网关

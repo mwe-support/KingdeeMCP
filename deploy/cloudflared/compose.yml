@@ -1,0 +1,25 @@
+name: kingdee-mcp-edge
+
+services:
+  cloudflared:
+    image: docker.m.daocloud.io/cloudflare/cloudflared:2026.5.2
+    container_name: kingdee-mcp-cloudflared
+    restart: unless-stopped
+    network_mode: host
+    user: "0:0"
+    mem_limit: 128m
+    memswap_limit: 128m
+    pids_limit: 64
+    volumes:
+      - /etc/cloudflared/kingdee-mcp.token:/run/secrets/cloudflared_tunnel_token:ro
+    command:
+      - tunnel
+      - --no-autoupdate
+      - run
+      - --token-file
+      - /run/secrets/cloudflared_tunnel_token
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -24,7 +24,10 @@ ENV/
 
 # Sensitive files
 .env
+.env.*
+!.env.example
 .mcp.json
+secrets/
 
 # OS
 .DS_Store
@@ -32,9 +35,20 @@ Thumbs.db
 
 # Runtime logs
 usage_log.jsonl
+logs/
+*.log
+
+# Test and coverage output
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
 
 # Tool caches
 .playwright-mcp/
+.cache/
+.ruff_cache/
+.mypy_cache/
 
 # AI memory (per-machine)
 memory/

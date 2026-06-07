@@ -1,0 +1,27 @@
+[Unit]
+Description=KingdeeMCP Lightweight Local HTTP Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/public/KingdeeMCP
+EnvironmentFile=/public/KingdeeMCP/.env
+ExecStart=/public/KingdeeMCP/.venv/bin/kingdee-mcp
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+MemoryAccounting=true
+MemoryHigh=384M
+MemoryMax=512M
+TasksAccounting=true
+TasksMax=128
+LimitNOFILE=4096
+OOMPolicy=stop
+
+[Install]
+WantedBy=multi-user.target

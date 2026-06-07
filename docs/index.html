@@ -3,23 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Kingdee MCP Server - 让 AI 直接操作金蝶云星空</title>
-  <meta name="description" content="金蝶云星空 MCP Server，让 AI 直接操作金蝶 ERP。支持 Claude Desktop、Cursor、Windsurf、Cline 等所有 MCP 兼容客户端，实现采购、销售、库存等业务自动化。">
-  <meta name="keywords" content="金蝶MCP,金蝶云星空,MCP Server,金蝶AI,金蝶ERP自动化,Kingdee MCP,AI操作金蝶,金蝶API,Claude金蝶,金蝶智能助手">
+  <title>Kingdee MCP Server - 让 AI 安全查询金蝶云星空</title>
+  <meta name="description" content="金蝶云星空 MCP Server，当前 lightweight 生产入口让 AI 安全查询金蝶 ERP。支持 Claude Desktop、Cursor、Windsurf、Cline 等 MCP 兼容客户端，聚焦采购、销售、库存、基础资料等只读场景。">
+  <meta name="keywords" content="金蝶MCP,金蝶云星空,MCP Server,金蝶AI,金蝶ERP查询,Kingdee MCP,AI查询金蝶,金蝶API,Claude金蝶,金蝶智能助手">
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="https://wahailong.github.io/KingdeeMCP/">
 
   <!-- Open Graph / 社交分享 -->
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://wahailong.github.io/KingdeeMCP/">
-  <meta property="og:title" content="Kingdee MCP Server - 让 AI 直接操作金蝶云星空">
-  <meta property="og:description" content="金蝶云星空 MCP Server，让 AI 直接操作金蝶 ERP。支持 Claude Desktop、Cursor、Windsurf、Cline 等所有 MCP 兼容客户端。">
+  <meta property="og:title" content="Kingdee MCP Server - 让 AI 安全查询金蝶云星空">
+  <meta property="og:description" content="金蝶云星空 MCP Server，让 AI 安全查询金蝶 ERP。支持 Claude Desktop、Cursor、Windsurf、Cline 等 MCP 兼容客户端。">
   <meta property="og:site_name" content="Kingdee MCP">
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Kingdee MCP Server - 让 AI 直接操作金蝶云星空">
-  <meta name="twitter:description" content="金蝶云星空 MCP Server，让 AI 直接操作金蝶 ERP。支持 Claude Desktop、Cursor、Windsurf、Cline 等所有 MCP 兼容客户端。">
+  <meta name="twitter:title" content="Kingdee MCP Server - 让 AI 安全查询金蝶云星空">
+  <meta name="twitter:description" content="金蝶云星空 MCP Server，让 AI 安全查询金蝶 ERP。支持 Claude Desktop、Cursor、Windsurf、Cline 等 MCP 兼容客户端。">
 
   <!-- 结构化数据 -->
   <script type="application/ld+json">
@@ -27,7 +27,7 @@
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
     "name": "Kingdee MCP Server",
-    "description": "金蝶云星空 MCP Server，让 AI 直接操作金蝶 ERP，支持采购、销售、库存等业务自动化",
+    "description": "金蝶云星空 MCP Server，让 AI 安全查询金蝶 ERP，支持采购、销售、库存等只读场景",
     "url": "https://wahailong.github.io/KingdeeMCP/",
     "applicationCategory": "BusinessApplication",
     "operatingSystem": "Windows, macOS, Linux",
@@ -802,7 +802,7 @@
           </svg>
           MCP Server
         </div>
-        <h1>让 AI 直接操作<br>金蝶云星空</h1>
+        <h1>让 AI 安全查询<br>金蝶云星空</h1>
         <p>金蝶云星空 ERP 的 MCP Server，支持 Claude Desktop、Cursor、Windsurf、OpenClaw 等所有 MCP 兼容客户端。通过 OpenClaw 还可以在 <strong>微信、WhatsApp、Telegram</strong> 中直接操作金蝶。</p>
         <div class="hero-buttons">
           <a href="#install" class="btn btn-primary">
@@ -906,7 +906,7 @@
       <div class="container">
         <div class="section-header">
           <h2>为什么选择 Kingdee MCP</h2>
-          <p>简单、高效、安全地让 AI 助手接入你的金蝶系统</p>
+          <p>简单、高效、安全地让 AI 助手只读接入你的金蝶系统</p>
         </div>
         <div class="features-grid">
           <div class="feature-card">
@@ -925,7 +925,7 @@
                 <path d="M3 9h18M9 21V9"/>
               </svg>
             </div>
-            <h3>13+ 实用工具</h3>
+            <h3>14 个只读工具</h3>
             <p>涵盖采购、销售、库存、基础资料等核心业务模块，开箱即用。</p>
           </div>
           <div class="feature-card">
@@ -935,7 +935,7 @@
               </svg>
             </div>
             <h3>安全认证</h3>
-            <p>采用金蝶官方 WebAPI 认证，支持 AppSecret 方式登录，凭证本地存储。</p>
+            <p>采用金蝶官方 WebAPI 认证，MCP Bearer Token 映射到不同金蝶用户。</p>
           </div>
           <div class="feature-card">
             <div class="feature-icon">
@@ -945,7 +945,7 @@
               </svg>
             </div>
             <h3>自动重试</h3>
-            <p>Session 过期自动重新登录，连接失败自动重试，稳定可靠。</p>
+            <p>按金蝶用户缓存 Session，过期后只刷新受影响用户。</p>
           </div>
           <div class="feature-card">
             <div class="feature-icon">
@@ -957,7 +957,7 @@
               </svg>
             </div>
             <h3>类型安全</h3>
-            <p>基于 Pydantic 的数据验证，所有输入参数都有类型检查和自动补全。</p>
+            <p>使用手写 JSON Schema 和轻量参数校验，减少生产依赖。</p>
           </div>
           <div class="feature-card">
             <div class="feature-icon">
@@ -967,7 +967,7 @@
               </svg>
             </div>
             <h3>易于扩展</h3>
-            <p>基于 FastMCP 框架，轻松添加自定义工具和业务逻辑。</p>
+            <p>基于轻量工具注册表扩展自定义只读工具，生产入口不依赖 FastMCP。</p>
           </div>
         </div>
       </div>
@@ -977,9 +977,14 @@
       <div class="container">
         <div class="section-header">
           <h2>支持的工具列表</h2>
-          <p>共 13 个工具，覆盖核心业务场景</p>
+          <p>当前生产注册 14 个核心只读工具</p>
         </div>
         <div class="tools-grid">
+          <div class="tool-card">
+            <div class="tool-category">诊断</div>
+            <div class="tool-name">kingdee_smoke_test</div>
+            <div class="tool-desc">验证认证和金蝶登录链路</div>
+          </div>
           <div class="tool-card">
             <div class="tool-category">通用查询</div>
             <div class="tool-name">kingdee_query_bills</div>
@@ -994,6 +999,11 @@
             <div class="tool-category">供应链</div>
             <div class="tool-name">kingdee_query_purchase_orders</div>
             <div class="tool-desc">查询采购订单</div>
+          </div>
+          <div class="tool-card">
+            <div class="tool-category">供应链</div>
+            <div class="tool-name">kingdee_query_purchase_order_progress</div>
+            <div class="tool-desc">查询采购订单执行进度</div>
           </div>
           <div class="tool-card">
             <div class="tool-category">供应链</div>
@@ -1021,29 +1031,24 @@
             <div class="tool-desc">查询客户/供应商</div>
           </div>
           <div class="tool-card">
-            <div class="tool-category">单据操作</div>
-            <div class="tool-name">kingdee_save_bill</div>
-            <div class="tool-desc">新建或修改单据</div>
+            <div class="tool-category">元数据</div>
+            <div class="tool-name">kingdee_list_forms</div>
+            <div class="tool-desc">查看内置表单目录</div>
           </div>
           <div class="tool-card">
-            <div class="tool-category">单据操作</div>
-            <div class="tool-name">kingdee_submit_bills</div>
-            <div class="tool-desc">提交单据</div>
+            <div class="tool-category">元数据</div>
+            <div class="tool-name">kingdee_get_fields</div>
+            <div class="tool-desc">查看推荐字段</div>
           </div>
           <div class="tool-card">
-            <div class="tool-category">单据操作</div>
-            <div class="tool-name">kingdee_audit_bills</div>
-            <div class="tool-desc">审核单据</div>
+            <div class="tool-category">工作流</div>
+            <div class="tool-name">kingdee_query_pending_approvals</div>
+            <div class="tool-desc">查询指定状态单据</div>
           </div>
           <div class="tool-card">
-            <div class="tool-category">单据操作</div>
-            <div class="tool-name">kingdee_unaudit_bills</div>
-            <div class="tool-desc">反审核单据</div>
-          </div>
-          <div class="tool-card">
-            <div class="tool-category">单据操作</div>
-            <div class="tool-name">kingdee_delete_bills</div>
-            <div class="tool-desc">删除单据</div>
+            <div class="tool-category">工作流</div>
+            <div class="tool-name">kingdee_query_workflow_status</div>
+            <div class="tool-desc">查看单据状态摘要</div>
           </div>
         </div>
       </div>
@@ -1052,83 +1057,55 @@
     <section id="install" class="installation">
       <div class="container">
         <div class="section-header">
-          <h2>快速安装</h2>
-          <p>只需几步，即可让 AI 连接你的金蝶系统</p>
+          <h2>安装与部署</h2>
+          <p>生产入口监听 127.0.0.1:8199，通过 Cloudflare Tunnel 对外访问</p>
         </div>
         <div class="install-steps">
           <div class="install-step">
             <div class="step-number">1</div>
             <div class="step-content">
-              <h3>安装 MCP Server</h3>
-              <p>确保已安装 Python 3.10+，通过 pip 安装。</p>
+              <h3>安装 Python 环境</h3>
               <div class="code-wrapper">
-                <pre><code>pip install kingdee-mcp</code></pre>
-                <button class="code-copy-btn" onclick="copyCode(this)">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                  复制
-                </button>
+                <pre><code>cd /public/KingdeeMCP
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -e .</code></pre>
               </div>
             </div>
           </div>
           <div class="install-step">
             <div class="step-number">2</div>
             <div class="step-content">
-              <h3>金蝶后台授权</h3>
-              <p>在金蝶云星空中创建集成用户并生成应用凭证。</p>
-              <p>进入 <strong>系统管理 → 第三方系统登录授权 → 新增</strong>，新建一个集成用户（不要用 Administrator），然后生成应用ID和应用密钥。</p>
+              <h3>配置 .env</h3>
+              <p>保留 MCP_HOST=127.0.0.1、MCP_PORT=8199，完整说明见 docs/configuration.md。</p>
+              <div class="code-wrapper">
+                <pre><code>MCP_TRANSPORT=streamable-http
+MCP_HOST=127.0.0.1
+MCP_PORT=8199
+MCP_PATH=/mcp
+MCP_AUTH_DISABLED=false</code></pre>
+              </div>
             </div>
           </div>
           <div class="install-step">
             <div class="step-number">3</div>
             <div class="step-content">
-              <h3>配置 MCP 客户端</h3>
-              <p>在你的 MCP 客户端配置文件中添加以下内容。</p>
+              <h3>生成 Bearer Token</h3>
               <div class="code-wrapper">
-                <pre><code>{
-  "mcpServers": {
-    "kingdee": {
-      "command": "uvx",
-      "args": ["kingdee-mcp"],
-      "env": {
-        "KINGDEE_SERVER_URL": "http://your-server/k3cloud/",
-        "KINGDEE_ACCT_ID": "your_acct_id",
-        "KINGDEE_USERNAME": "API集成",
-        "KINGDEE_APP_ID": "your_app_id",
-        "KINGDEE_APP_SEC": "your_app_secret"
-      }
-    }
-  }
-}</code></pre>
-                <button class="code-copy-btn" onclick="copyCode(this)">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                  复制
-                </button>
+                <pre><code>kingdee-mcp-token create   --operator zhangsan   --kingdee-username zhangsan   --allow read   --config /public/KingdeeMCP/secrets/tokens.json</code></pre>
               </div>
-              <p style="margin-top: 16px; font-size: 0.9rem; color: var(--text-muted);">
-                <strong>配置文件位置：</strong><br>
-                Claude Desktop (Win): <code>%APPDATA%\Claude\claude_desktop_config.json</code><br>
-                Claude Desktop (Mac): <code>~/Library/Application Support/Claude/claude_desktop_config.json</code><br>
-                Cursor: Settings → MCP → Add Server<br>
-                Claude Code CLI: <code>~/.claude/settings.json</code>
-              </p>
             </div>
           </div>
           <div class="install-step">
             <div class="step-number">4</div>
             <div class="step-content">
-              <h3>重启客户端</h3>
-              <p>完成配置后，重启你的 MCP 客户端即可开始使用。</p>
+              <h3>启动 systemd 服务</h3>
+              <div class="code-wrapper">
+                <pre><code>sudo /public/KingdeeMCP/scripts/install_systemd_service.sh
+sudo systemctl restart kingdee-mcp.service
+curl -sS http://127.0.0.1:8199/healthz</code></pre>
+              </div>
             </div>
-          </div>
-          <div class="config-note">
-            <h4>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                <polyline points="22,4 12,14.01 9,11.01"/>
-              </svg>
-              安全提示
-            </h4>
-            <p>请确保 <code>.env</code> 文件不会被提交到代码仓库。建议将其加入 <code>.gitignore</code>。</p>
           </div>
         </div>
       </div>
@@ -1148,73 +1125,61 @@
             </div>
             <div class="example-body">
               <pre><code>kingdee_query_purchase_orders(
-  top: 20,
+  limit: 20,
   filter_string: "FDocumentStatus = 'C'",
-  order_by: "FDate DESC"
+  order_string: "FDate DESC"
 )</code></pre>
             </div>
           </div>
           <div class="example-card">
             <div class="example-header">
               <span class="example-type query">查询</span>
-              <span class="example-prompt">查一下物料编码 MAT001 的即时库存</span>
+              <span class="example-prompt">查一下有库存的记录</span>
             </div>
             <div class="example-body">
               <pre><code>kingdee_query_inventory(
-  filter_string: "FMaterialNumber = 'MAT001'"
+  filter_string: "FBaseQty > 0",
+  limit: 20
 )</code></pre>
             </div>
           </div>
           <div class="example-card">
             <div class="example-header">
               <span class="example-type query">查询</span>
-              <span class="example-prompt">查询客户编码 C001 的所有销售订单</span>
+              <span class="example-prompt">查询客户编码 C001 的销售订单</span>
             </div>
             <div class="example-body">
               <pre><code>kingdee_query_sale_orders(
-  filter_string: "FSupplierNumber = 'C001'"
+  filter_string: "FCustId.FNumber = 'C001'",
+  limit: 20
 )</code></pre>
             </div>
           </div>
           <div class="example-card">
             <div class="example-header">
-              <span class="example-type action">操作</span>
-              <span class="example-prompt">帮我新建一张采购订单</span>
+              <span class="example-type query">元数据</span>
+              <span class="example-prompt">查看采购相关表单</span>
             </div>
             <div class="example-body">
-              <pre><code>kingdee_save_bill(
-  form_id: "PUR_PurchaseOrder",
-  data: {
-    FSupplierId: { FNumber: "S001" },
-    FMaterialId: { FNumber: "MAT001" },
-    FQty: 100,
-    FTaxPrice: 10.5
-  }
-)</code></pre>
+              <pre><code>kingdee_list_forms(keyword: "采购")</code></pre>
             </div>
           </div>
           <div class="example-card">
             <div class="example-header">
-              <span class="example-type action">操作</span>
-              <span class="example-prompt">审核这几张采购入库单</span>
+              <span class="example-type query">元数据</span>
+              <span class="example-prompt">查看采购订单字段</span>
             </div>
             <div class="example-body">
-              <pre><code>kingdee_audit_bills(
-  form_id: "STK_Instock",
-  bill_ids: ["12345", "12346"]
-)</code></pre>
+              <pre><code>kingdee_get_fields(form_id: "PUR_PurchaseOrder")</code></pre>
             </div>
           </div>
           <div class="example-card">
             <div class="example-header">
-              <span class="example-type action">操作</span>
-              <span class="example-prompt">反审核销售订单 SO2024001</span>
+              <span class="example-type query">诊断</span>
+              <span class="example-prompt">验证认证和金蝶登录</span>
             </div>
             <div class="example-body">
-              <pre><code>kingdee_unaudit_bills(
-  form_id: "SAL_SaleOrder",
-  bill_ids: ["SO2024001"]
-)</code></pre>
+              <pre><code>kingdee_smoke_test(run_query: false)</code></pre>
             </div>
           </div>
         </div>
@@ -1234,7 +1199,7 @@
           </div>
           <div class="faq-item">
             <div class="faq-question">Q: 连接超时怎么解决？</div>
-            <div class="faq-answer">检查 KINGDEE_SERVER_URL 是否正确（需要包含 /k3cloud/ 后缀），确保服务器在同一局域网内或已开启外网访问。</div>
+            <div class="faq-answer">检查 KINGDEE_SERVER_URL 是否正确（需要包含 /k3cloud/ 后缀），并确认 MCP origin 只监听 127.0.0.1:8199，由 Cloudflare Tunnel 对外访问。</div>
           </div>
           <div class="faq-item">
             <div class="faq-question">Q: 查询结果为空是怎么回事？</div>
@@ -1242,11 +1207,11 @@
           </div>
           <div class="faq-item">
             <div class="faq-question">Q: 支持金蝶云星空公有云吗？</div>
-            <div class="faq-answer">目前主要测试环境为私有云。公有云用户可能需要调整认证方式和 API 地址。</div>
+            <div class="faq-answer">支持公有云和私有云的 AppSecret WebAPI 认证；生产环境需确认服务器能访问对应 API 地址。</div>
           </div>
           <div class="faq-item">
             <div class="faq-question">Q: 如何添加自定义业务逻辑？</div>
-            <div class="faq-answer">基于 FastMCP 框架，可以直接在 server.py 中添加新的 @mcp.tool() 装饰器方法即可扩展功能。</div>
+            <div class="faq-answer">当前轻量实现应在 light_tools.py 的工具注册表中添加工具，并保持生产入口不依赖 FastMCP。</div>
           </div>
         </div>
       </div>

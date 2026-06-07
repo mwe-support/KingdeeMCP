@@ -1,273 +1,330 @@
-# Kingdee MCP Server —— 让 AI 直接操作金蝶云星空 ERP
+# KingdeeMCP - 金蝶云星空轻量 MCP 网关
 
-[![PyPI version](https://img.shields.io/pypi/v/kingdee-mcp?style=flat-square&color=2563eb)](https://pypi.org/project/kingdee-mcp/)
-[![Downloads](https://img.shields.io/pypi/dm/kingdee-mcp?style=flat-square&color=10b981)](https://pypi.org/project/kingdee-mcp/)
-[![Python versions](https://img.shields.io/pypi/pyversions/kingdee-mcp?style=flat-square)](https://pypi.org/project/kingdee-mcp/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
-[![MCP Badge](https://lobehub.com/badge/mcp-full/wahailong-kingdeemcp?theme=light)](https://lobehub.com/mcp/wahailong-kingdeemcp)
+KingdeeMCP 当前生产实现是一个轻量 MCP Gateway，用于让 MCP 客户端安全地调用金蝶云星空 K/3 Cloud WebAPI。它不再依赖 FastMCP/Starlette/uvicorn/SSE，而是使用 Python 标准库实现普通 JSON-RPC HTTP/stdio 协议层，并保留金蝶官方 `LoginByAppSecret` 认证链路。
 
-**Kingdee MCP Server** 是金蝶云星空（Kingdee Cloud Star）ERP 的 [MCP（Model Context Protocol）](https://modelcontextprotocol.io/) 服务端，让 Claude、Cursor、Windsurf、Cline 等 AI 助手能够通过自然语言直接操作金蝶 ERP 系统。
+## 当前结论
 
-官方网站：https://wahailong.github.io/KingdeeMCP/
+- 生产服务只监听本机：`MCP_HOST=127.0.0.1`。
+- 推荐本地端口：`MCP_PORT=8199`。
+- 远程访问通过 Cloudflare Tunnel/Access，不直接暴露 MCP origin 端口。
+- HTTP 响应是 `application/json` + `Content-Length`，不返回 `text/event-stream`，不使用 `mcp-session-id`。
+- Bearer Token 映射到 `operator`、`kingdee_username`、`allowed_tools`。
+- 金蝶 WebAPI 仍使用共享 `AppID/AppSecret` + 指定金蝶用户 `LoginByAppSecret` 登录。
+- 当前生产只注册 14 个核心只读工具；写入、审核、删除、反审核、下推、SQL 探查不进入第一版 lightweight 工具面。
 
-## 为什么需要金蝶 MCP？
+## 架构
 
-传统 ERP 操作繁琐，需要在多个界面间切换。有了 **金蝶 MCP Server**，你可以：
-
-- 直接对 AI 说："**查询本月已审核的采购订单**"
-- 直接对 AI 说："**帮我新建一张销售订单**"
-- 直接对 AI 说："**审核这几张入库单**"
-- 在微信、WhatsApp、Telegram 中通过 OpenClaw 操作金蝶
-
-AI 会自动调用金蝶 API 完成操作，无需手动登录 ERP 界面。
-
-## 对实施与开发的价值
-
-**实施阶段**
-- **快速验证配置**：用自然语言直接查数据，无需登录 ERP 界面逐层点菜单
-- **数据核查**：批量查询单据状态、库存数量，快速定位问题
-- **客户演示**：现场说"查一下你们的采购订单"，AI 实时返回结果，演示效果直观
-
-**日常使用**
-- 业务人员自助查询，减少依赖实施人员的频率
-- 批量提交、审核单据，替代重复的手工操作
-- 通过微信 / WhatsApp 直接操作金蝶，无需打开 ERP 客户端
-
-**开发阶段**
-- 用 `kingdee_list_forms`、`kingdee_get_fields` 快速探索表单结构，替代翻文档
-- 自然语言调试接口，比手写 API 请求效率更高
-- 可作为内部工具基础进行二次开发，快速扩展自定义工具
-
-## 支持的 AI 客户端
-
-| 客户端 | 支持方式 |
-|--------|---------|
-| [Claude Desktop](https://claude.ai/download) | 原生 MCP |
-| [Cursor](https://cursor.sh/) | 原生 MCP |
-| [Windsurf](https://codeium.com/windsurf) | 原生 MCP |
-| [Cline](https://github.com/cline/cline) | 原生 MCP |
-| [Continue](https://continue.dev/) | 原生 MCP |
-| [Claude Code CLI](https://claude.ai/claude-code) | 原生 MCP |
-| [OpenClaw](https://openclaw.ai/) | 微信/WhatsApp/Telegram 中使用；将本页地址发给 OpenClaw，它会自动完成安装并引导填写金蝶配置 |
-| 其他 MCP 兼容客户端 | 原生 MCP |
-
-## 功能特性
-
-- **20 个 ERP 操作工具**：涵盖采购、销售、库存、基础资料等核心业务
-- **4 个 SQL Server 探查工具**：搜索表、搜索字段、查看表结构、金蝶元数据候选发现
-- **自然语言操作**：用中文直接描述需求，AI 自动转换为 API 调用
-- **异步高性能**：基于 async/await，支持并发请求
-- **自动重试**：Session 过期自动重登，连接失败自动重试
-- **安全认证**：采用金蝶官方 WebAPI 认证，支持 AppSecret 方式，兼容公有云和私有云
-- **类型安全**：基于 Pydantic 数据验证，参数自动补全
-- **易于扩展**：基于 FastMCP 框架，轻松添加自定义工具
-- **使用示例**：提供 [9 个常见业务场景示例](./examples/)，覆盖查询、新建、审核、下推等操作
-
-## 快速安装
-
-```bash
-pip install kingdee-mcp
+```text
+MCP Client
+  -> Cloudflare Access/Tunnel, optional but recommended for remote access
+  -> local origin http://127.0.0.1:8199/mcp
+  -> lightweight JSON-RPC dispatcher
+  -> Bearer token hash mapping
+  -> per-Kingdee-user session cache
+  -> Kingdee WebAPI over httpx HTTP/1.1
 ```
 
-或使用 uvx 直接运行（推荐，无需手动安装）：
+生产入口：
 
-```bash
-uvx kingdee-mcp
+```text
+kingdee-mcp -> kingdee_mcp.main:main -> kingdee_mcp.mcp_lite
 ```
 
-## 配置教程
+主要模块：
 
-### 第一步：金蝶云星空后台授权
+| 文件 | 作用 |
+| --- | --- |
+| `src/kingdee_mcp/mcp_lite.py` | 轻量 MCP HTTP/stdio 协议层。 |
+| `src/kingdee_mcp/light_tools.py` | 14 个生产只读工具、手写 JSON Schema 和参数校验。 |
+| `src/kingdee_mcp/kingdee_client.py` | 金蝶 WebAPI 调用封装。 |
+| `src/kingdee_mcp/kingdee_session.py` | 每个金蝶用户的 session cache 和刷新。 |
+| `src/kingdee_mcp/auth.py` | Bearer token hash 校验和 OperatorContext。 |
+| `src/kingdee_mcp/config.py` | 环境变量读取。 |
+| `src/kingdee_mcp/server.py` | 旧 FastMCP 实现，仅作为 legacy 参考。 |
 
-1. 进入 **系统管理 → 第三方系统登录授权 → 新增**
-2. 新建一个集成用户（**不要用 Administrator**）
-3. 生成 **AppID** 和 **AppSecret**
-4. 为该用户分配所需模块的操作权限
+## 安装
 
-### 第二步：配置 MCP 客户端
+在服务器仓库目录：
 
-在你的 MCP 客户端配置文件中添加以下内容：
+```bash
+cd /public/KingdeeMCP
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -e .
+```
+
+生产依赖保持轻量，必需运行依赖是 `httpx`。旧 FastMCP/Pydantic/pyodbc 能力不属于当前生产入口。
+
+## 配置文件
+
+复制模板：
+
+```bash
+cd /public/KingdeeMCP
+cp .env.example .env
+chmod 600 .env
+```
+
+完整环境变量说明见 [docs/configuration.md](docs/configuration.md)。当前 `.env.example` 中每个变量上方都有注释。
+
+### 推荐生产配置
+
+```env
+KINGDEE_SERVER_URL=https://your-kingdee-host/k3cloud/
+KINGDEE_ACCT_ID=your_acct_id
+KINGDEE_APP_ID=your_app_id
+KINGDEE_APP_SEC=your_app_secret
+KINGDEE_LCID=2052
+KINGDEE_USERNAME=
+
+MCP_TRANSPORT=streamable-http
+MCP_HOST=127.0.0.1
+MCP_PORT=8199
+MCP_PATH=/mcp
+MCP_TOKEN_CONFIG=/public/KingdeeMCP/secrets/tokens.json
+MCP_AUTH_DISABLED=false
+
+MCP_MAX_CONCURRENT_TOOLS=8
+MCP_MAX_CONCURRENT_KINGDEE_REQUESTS=4
+MCP_TOOL_QUEUE_TIMEOUT_SECONDS=3
+MCP_TOOL_CALL_TIMEOUT_SECONDS=120
+MCP_HTTP_REQUEST_QUEUE_SIZE=128
+```
+
+`KINGDEE_USERNAME` 在 HTTP 生产模式下应留空。共享远程部署不使用一个全局金蝶用户，而是从 Bearer Token 映射出 `kingdee_username`。
+
+## 环境变量说明
+
+| 变量 | 推荐值 | 是否生产需要 | 说明 |
+| --- | --- | --- | --- |
+| `KINGDEE_SERVER_URL` | `https://your-kingdee-host/k3cloud/` | 是 | 金蝶 WebAPI 根地址，必须包含 `/k3cloud/` 后缀。 |
+| `KINGDEE_ACCT_ID` | 账套 ID | 是 | 传给 `LoginByAppSecret` 的账套 ID。 |
+| `KINGDEE_APP_ID` | 应用 ID | 是 | 金蝶后台第三方系统登录授权中的应用 ID。 |
+| `KINGDEE_APP_SEC` | 应用密钥 | 是 | 金蝶后台第三方系统登录授权中的应用密钥，只能保存在服务器。 |
+| `KINGDEE_LCID` | `2052` | 否 | 金蝶语言标识，`2052` 为简体中文。 |
+| `KINGDEE_USERNAME` | 空 | 仅本地测试 | stdio、`--check`、`MCP_AUTH_DISABLED=true` 时的本地 fallback 用户。HTTP 生产不用它。 |
+| `MCP_TRANSPORT` | `streamable-http` | 是 | 启动 lightweight HTTP 网关。`stdio` 仅用于本地测试。 |
+| `MCP_HOST` | `127.0.0.1` | 是 | MCP origin 监听地址。出于安全考虑必须只监听本机。 |
+| `MCP_PORT` | `8199` | 是 | MCP origin 本地端口。Cloudflared 连接这个端口。 |
+| `MCP_PATH` | `/mcp` | 是 | MCP JSON-RPC HTTP 路径。 |
+| `MCP_TOKEN_CONFIG` | `/public/KingdeeMCP/secrets/tokens.json` | 是 | Bearer token hash 映射文件路径。 |
+| `MCP_AUTH_DISABLED` | `false` | 是 | 只允许本地测试设为 `true`，生产必须为 `false`。 |
+| `MCP_MAX_CONCURRENT_TOOLS` | `8` | 否 | MCP 工具处理器最大并发数。 |
+| `MCP_MAX_CONCURRENT_KINGDEE_REQUESTS` | `4` | 否 | 对金蝶 WebAPI 的最大并发请求数。 |
+| `MCP_TOOL_QUEUE_TIMEOUT_SECONDS` | `3` | 否 | 等待工具并发槽位的时间，超时返回 `server_busy`。 |
+| `MCP_TOOL_CALL_TIMEOUT_SECONDS` | `120` | 否 | 单次工具调用最大执行时间。 |
+| `MCP_HTTP_REQUEST_QUEUE_SIZE` | `128` | 否 | 本地 HTTP server TCP backlog。 |
+
+以下旧变量不被 lightweight 生产入口读取，不应放入当前生产 `.env`：
+
+```text
+MCP_JSON_RESPONSE
+MCP_STATELESS_HTTP
+MCP_AUTH_ISSUER_URL
+MCP_RESOURCE_SERVER_URL
+MCP_USAGE_LOG
+MCP_USAGE_LOG_DIR
+MCP_MAX_CONCURRENT_WRITE_TOOLS
+MCP_MAX_CONCURRENT_DESTRUCTIVE_TOOLS
+MCP_MAX_CONCURRENT_TOOLS_PER_OPERATOR
+MCP_KINGDEE_QUEUE_TIMEOUT_SECONDS
+MCP_RATE_LIMIT_GLOBAL_PER_MINUTE
+MCP_RATE_LIMIT_PER_OPERATOR_PER_MINUTE
+MCP_SQLSERVER_HOST
+MCP_SQLSERVER_PORT
+MCP_SQLSERVER_USER
+MCP_SQLSERVER_PASSWORD
+MCP_SQLSERVER_DATABASE
+MCP_SQLSERVER_SCHEMA
+MCP_SQLSERVER_DRIVER
+```
+
+## Bearer Token 配置
+
+生成一个只读 token，并写入 hash mapping：
+
+```bash
+cd /public/KingdeeMCP
+. .venv/bin/activate
+kingdee-mcp-token create \
+  --operator zhangsan \
+  --kingdee-username zhangsan \
+  --allow read \
+  --config /public/KingdeeMCP/secrets/tokens.json
+```
+
+命令会打印一次明文 Bearer token。配置文件只保存 hash，不保存明文 token。明文 token 需要交给 MCP 客户端配置保存。
+
+`tokens.json` 结构：
+
+```json
+{
+  "tokens": {
+    "sha256:<token_hash>": {
+      "operator": "zhangsan",
+      "kingdee_username": "zhangsan",
+      "enabled": true,
+      "allowed_tools": ["read"]
+    }
+  }
+}
+```
+
+当前生产建议只使用 `allowed_tools=["read"]`。legacy profile 名称不会在 lightweight 入口中开放写工具。
+
+## systemd 部署
+
+安装 systemd unit：
+
+```bash
+sudo /public/KingdeeMCP/scripts/install_systemd_service.sh
+sudo systemctl enable kingdee-mcp.service
+sudo systemctl restart kingdee-mcp.service
+```
+
+检查状态：
+
+```bash
+systemctl is-active kingdee-mcp.service
+systemctl show kingdee-mcp.service -p MainPID -p MemoryCurrent -p MemoryPeak --no-pager
+ss -ltnp | grep ':8199'
+curl -sS http://127.0.0.1:8199/healthz
+```
+
+预期：
+
+- 服务为 `active`。
+- 只监听 `127.0.0.1:8199`。
+- `/healthz` 返回 `kingdee-mcp-lite`。
+- 不出现 `0.0.0.0:8199` 或公网监听。
+
+## Cloudflare Tunnel 部署
+
+Cloudflared 只负责把外部域名安全转发到本地 origin：
+
+```text
+http://127.0.0.1:8199/mcp
+```
+
+Docker Compose 说明见 [deploy/cloudflared/README.md](deploy/cloudflared/README.md)。Cloudflare Access 推荐保持一个 Service Auth 策略，客户端必需传：
+
+```text
+CF-Access-Client-Id: <cloudflare access client id>
+CF-Access-Client-Secret: <cloudflare access client secret>
+Authorization: Bearer <kingdee mcp bearer token>
+```
+
+`User-Agent: KingdeeMCP-Client/1.0` 只作为可选兼容项，用于 Cloudflare 区域存在浏览器类检查且影响 API 客户端时。
+
+## MCP 客户端配置模板
+
+远程 HTTP 客户端应连接 Cloudflare 域名，而不是服务器本地端口。示例字段名会因客户端不同而略有差异：
 
 ```json
 {
   "mcpServers": {
     "kingdee": {
-      "command": "uvx",
-      "args": ["kingdee-mcp"],
-      "env": {
-        "KINGDEE_SERVER_URL": "http://your-server/k3cloud/",
-        "KINGDEE_ACCT_ID": "你的账套ID",
-        "KINGDEE_USERNAME": "集成用户名",
-        "KINGDEE_APP_ID": "AppID",
-        "KINGDEE_APP_SEC": "AppSecret"
+      "type": "http",
+      "url": "https://your-cloudflare-domain.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer <kingdee-mcp-token>",
+        "CF-Access-Client-Id": "<cloudflare-access-client-id>",
+        "CF-Access-Client-Secret": "<cloudflare-access-client-secret>"
       }
     }
   }
 }
 ```
 
-**配置文件位置：**
+本地 stdio 只用于开发或单用户测试：
 
-| 客户端 | 配置文件路径 |
-|--------|-------------|
-| Claude Desktop (Windows) | `%APPDATA%\Claude\claude_desktop_config.json` |
-| Claude Desktop (macOS) | `~/Library/Application Support/Claude/claude_desktop_config.json` |
-| Cursor | Settings → MCP → Add Server |
-| Claude Code CLI | `~/.claude/settings.json` |
-| OpenClaw | 使用 `openclaw mcp set` 命令配置，自动热加载无需重启 |
-
-### 第三步：重启客户端
-
-配置完成后重启你的 MCP 客户端即可开始使用。
-
-> **OpenClaw 用户**：使用 `openclaw mcp set` 配置后会自动热加载，**无需重启网关**。
-
-## 环境变量说明
-
-| 变量 | 说明 | 示例 |
-|------|------|------|
-| `KINGDEE_SERVER_URL` | 金蝶服务器地址（需包含 /k3cloud/） | `http://your-server/k3cloud/` |
-| `KINGDEE_ACCT_ID` | 账套ID | `your-acct-id` |
-| `KINGDEE_USERNAME` | 集成用户名 | `your-username` |
-| `KINGDEE_APP_ID` | 应用ID | `your-app-id` |
-| `KINGDEE_APP_SEC` | 应用密钥（AppSecret） | `your-app-secret` |
-| `MCP_SQLSERVER_HOST` | SQL Server 主机（可选，用于数据库探查） | `localhost` |
-| `MCP_SQLSERVER_PORT` | SQL Server 端口（默认 1433） | `1433` |
-| `MCP_SQLSERVER_DATABASE` | 数据库名 | `AIS20260309171043` |
-| `MCP_SQLSERVER_USER` | SQL Server 用户（建议只读账号） | `sa` |
-| `MCP_SQLSERVER_PASSWORD` | SQL Server 密码 | `xxxx` |
-
-## 可用工具列表
-
-### 元数据查询
-
-| 工具名称 | 功能说明 |
-|----------|---------|
-| `kingdee_list_forms` | 搜索可用表单（不知道 form_id 时使用） |
-| `kingdee_get_fields` | 获取表单字段列表 |
-
-### 数据查询（只读操作）
-
-| 工具名称 | 功能说明 |
-|----------|---------|
-| `kingdee_query_bills` | 通用单据查询，支持任意 form_id |
-| `kingdee_view_bill` | 查看单据完整详情 |
-| `kingdee_query_purchase_orders` | 查询采购订单 |
-| `kingdee_query_sale_orders` | 查询销售订单 |
-| `kingdee_query_stock_bills` | 查询出入库单据 |
-| `kingdee_query_inventory` | 查询即时库存 |
-| `kingdee_query_materials` | 查询物料档案 |
-| `kingdee_query_partners` | 查询客户/供应商档案 |
-
-### 单据操作（写操作）
-
-| 工具名称 | 功能说明 |
-|----------|---------|
-| `kingdee_save_bill` | 新建或修改单据 |
-| `kingdee_submit_bills` | 提交单据 |
-| `kingdee_audit_bills` | 审核单据 |
-| `kingdee_unaudit_bills` | 反审核单据 |
-| `kingdee_delete_bills` | 删除单据 |
-
-## 使用示例
-
-配置完成后，在 Claude 或其他 AI 客户端中直接用自然语言操作：
-
-```
-# 查询类
-查询最近 20 条已审核的采购订单
-查一下物料编码 MAT001 的即时库存
-查询客户编码 C001 的所有销售订单
-显示本月所有未提交的销售订单
-
-# 操作类
-帮我新建一张采购订单，供应商 S001，物料 MAT001，数量 100，单价 10.5
-审核这几张采购入库单：12345, 12346, 12347
-反审核销售订单 SO2024001
+```json
+{
+  "mcpServers": {
+    "kingdee-local": {
+      "command": "/public/KingdeeMCP/.venv/bin/kingdee-mcp",
+      "env": {
+        "MCP_TRANSPORT": "stdio",
+        "KINGDEE_SERVER_URL": "https://your-kingdee-host/k3cloud/",
+        "KINGDEE_ACCT_ID": "your_acct_id",
+        "KINGDEE_USERNAME": "single_test_user",
+        "KINGDEE_APP_ID": "your_app_id",
+        "KINGDEE_APP_SEC": "your_app_secret",
+        "KINGDEE_LCID": "2052"
+      }
+    }
+  }
+}
 ```
 
-## SQL Server 探查工具（可选）
+## 当前生产工具列表
 
-配置 `MCP_SQLSERVER_*` 环境变量后可用，帮助理解金蝶数据库结构：
+| 工具 | 说明 | 常用参数 |
+| --- | --- | --- |
+| `kingdee_smoke_test` | 检查 MCP 认证、token 映射用户、金蝶登录链路，可选小查询。 | `run_query` |
+| `kingdee_query_bills` | 通用单据查询。 | `form_id`, `filter_string`, `field_keys`, `limit` |
+| `kingdee_view_bill` | 查看单据详情。 | `form_id`, `bill_id`, `mode` |
+| `kingdee_query_purchase_orders` | 查询采购订单。 | `filter_string`, `limit` |
+| `kingdee_query_purchase_order_progress` | 查询采购订单执行进度。 | `filter_string`, `limit` |
+| `kingdee_query_sale_orders` | 查询销售订单。 | `filter_string`, `limit` |
+| `kingdee_query_stock_bills` | 查询库存单据。 | `form_id`, `filter_string`, `limit` |
+| `kingdee_query_inventory` | 查询即时库存，默认只查有库存记录。 | `filter_string`, `limit` |
+| `kingdee_query_materials` | 查询物料档案。 | `filter_string`, `limit` |
+| `kingdee_query_partners` | 查询客户或供应商。 | `partner_type`, `filter_string`, `limit` |
+| `kingdee_list_forms` | 查看当前内置表单目录。 | `keyword` |
+| `kingdee_get_fields` | 查看推荐字段和可用元数据摘要。 | `form_id` |
+| `kingdee_query_pending_approvals` | 按状态查询待处理/已审核/驳回类单据。 | `form_id`, `status`, `limit` |
+| `kingdee_query_workflow_status` | 查看单据工作流/单据状态摘要。 | `form_id`, `bill_id` |
 
-| 工具名称 | 功能说明 |
-|---------|---------|
-| `kingdee_discover_tables` | 按关键字搜索数据库表名 |
-| `kingdee_discover_columns` | 按关键字搜索字段名（含所在表） |
-| `kingdee_describe_table` | 查看表完整结构（字段、类型、主键、外键） |
-| `kingdee_discover_metadata_candidates` | 根据 form_id 发现对应的数据库表名 |
+未注册的 legacy 工具调用应返回 unknown/disallowed，不应触发金蝶 WebAPI。
 
-**典型用法**：先问 AI "采购订单在数据库里对应哪张表"，再用 `kingdee_describe_table` 看字段结构。
+## 测试
 
-## 支持的单据类型（form_id）
+轻量入口目标测试：
 
-| form_id | 说明 |
-|---------|------|
-| `PUR_PurchaseOrder` | 采购订单 |
-| `SAL_SaleOrder` | 销售订单 |
-| `STK_InStock` | 采购入库单 |
-| `SAL_OUTSTOCK` | 销售出库单 |
-| `STK_MisDelivery` | 其他出库单 |
-| `STK_Miscellaneous` | 其他入库单 |
-| `STK_TransferDirect` | 直接调拨单 |
-| `BD_Material` | 物料档案 |
-| `BD_Customer` | 客户档案 |
-| `BD_Supplier` | 供应商档案 |
-| `STK_Inventory` | 即时库存 |
-
-## 常见问题
-
-**Q: 提示认证失败怎么办？**
-检查 AppID / AppSecret 是否正确，集成用户是否有对应模块的访问权限。
-
-**Q: 连接超时怎么解决？**
-检查 `KINGDEE_SERVER_URL` 是否正确（需包含 `/k3cloud/` 后缀），确保服务器可访问。
-
-**Q: 支持金蝶云星空公有云吗？**
-支持。公有云和私有云使用相同的 AppSecret 认证方式，配置方式完全一致。
-
-## 配合 mcp-sqlserver-introspect 使用
-
-kingdee-mcp 提供两层能力：
-
-**第一层：ERP 操作层**（kingdee-mcp 内置）
-直接操作金蝶单据：查询、新建、提交、审核、下推等。
-
-**第二层：数据库理解层**（mcp-sqlserver-introspect）
-探查 SQL Server 表结构：找表、找字段、理解关联关系。
-
-**典型使用场景**：
-
-```
-# 场景一：接口映射
-问："帮我找采购订单相关的表"
-→ mcp-sqlserver-introspect 返回 T_PUR_PurchaseOrder 等表
-→ 确认 Kingdee API 字段和数据库字段的对应关系
-
-# 场景二：字段溯源
-问："帮我查 FTotalAmount 这个字段在哪些表里"
-→ mcp-sqlserver-introspect 返回包含该字段的表列表
-
-# 场景三：数据核查
-先用 mcp-sqlserver-introspect 探索表结构
-再用 kingdee-mcp 操作 ERP 数据
-两者配合，AI 既能理解数据库，又能操作 ERP
+```bash
+cd /public/KingdeeMCP
+. .venv/bin/activate
+python -m pytest tests/test_lightweight_mcp.py tests/test_auth_mapping.py tests/test_token_cli.py tests/test_kingdee_session.py -q
 ```
 
-**mcp-sqlserver-introspect** 项目地址：https://gitee.com/lzhrick123/mcp-sqlserver-introspect1
+协议和服务检查：
 
-> kingdee-mcp 已内置 SQL Server 探查工具（配置 `MCP_SQLSERVER_*` 环境变量即可使用），无需额外安装 mcp-sqlserver-introspect。
+```bash
+curl -sS http://127.0.0.1:8199/healthz
+```
 
-**Q: 如何添加自定义工具？**
-基于 FastMCP 框架，在 `server.py` 中添加 `@mcp.tool()` 装饰器方法即可扩展。
+真实金蝶链路最小烟测建议先跑：
 
-## 相关链接
+```text
+kingdee_smoke_test(run_query=false)
+```
 
-- [官方网站](https://wahailong.github.io/KingdeeMCP/)
-- [PyPI 包页面](https://pypi.org/project/kingdee-mcp/)
-- [MCP 协议文档](https://modelcontextprotocol.io/)
-- [金蝶云星空官网](https://www.kingdee.com/)
+`run_query=false` 只验证认证和登录链路，避免在连通性未确认前放大查询负载。
+
+## 故障排查
+
+| 现象 | 判断 |
+| --- | --- |
+| `401 missing_or_invalid_bearer` | 缺失、错误或禁用 Bearer token；检查 `MCP_TOKEN_CONFIG`。 |
+| `server_busy` | 并发超过 `MCP_MAX_CONCURRENT_TOOLS` 或队列等待超时；稍后重试或调低客户端并发。 |
+| 金蝶登录失败 | 检查 `KINGDEE_SERVER_URL`、账套、AppID/AppSecret、token 映射的 `kingdee_username` 是否在金蝶后台允许指定用户登录。 |
+| `Connection refused` | 当前服务器到 `KINGDEE_SERVER_URL` 主机/端口不可达，不是 MCP 协议问题。 |
+| 客户端拿到 SSE/session 相关错误 | 确认客户端走的是 lightweight HTTP endpoint；生产入口不会返回 SSE 或 `mcp-session-id`。 |
+| 服务监听公网 | 立即改回 `MCP_HOST=127.0.0.1` 并重启 systemd。 |
+
+## 文档索引
+
+- [docs/configuration.md](docs/configuration.md): 当前环境变量和安全默认值。
+- [docs/rate-limiting.md](docs/rate-limiting.md): lightweight 并发控制策略。
+- [docs/streamable-http-auth-design.md](docs/streamable-http-auth-design.md): 当前 HTTP 和多用户认证设计。
+- [docs/permission-architecture.md](docs/permission-architecture.md): Bearer Token 到金蝶用户的权限模型。
+- [deploy/cloudflared/README.md](deploy/cloudflared/README.md): Cloudflared Docker Compose 运行说明。
+
+## Legacy 说明
+
+旧 FastMCP `server.py`、写操作工具、SQL 探查、usage-log 工具和大量历史 examples 仍可作为参考材料，但不是当前 lightweight 生产工具面。后续如果要恢复写操作，应先重新设计审批、限流、审计和权限边界，再注册到 lightweight 工具表。
 
 ## License
 
-MIT © WaHaiLong
+MIT

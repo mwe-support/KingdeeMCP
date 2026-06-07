@@ -1,4 +1,6 @@
-# 工作流提示（Workflow Hints）
+> Legacy note: this document references write, audit, delete, push, composite, SQL, or legacy tools that are not registered in the current lightweight production entrypoint. Use it only as future design/reference material, not as current production usage guidance.
+
+# [Legacy] 工作流提示（Workflow Hints）
 
 > 按需检索的上下文片段，不是静态入口。AI 执行具体任务时按需参考。
 
