@@ -145,15 +145,14 @@ MCP_SQLSERVER_DRIVER
 
 ```bash
 cd /public/KingdeeMCP
-. .venv/bin/activate
-kingdee-mcp-token create \
+/public/KingdeeMCP/scripts/generate_token.sh \
   --operator zhangsan \
-  --kingdee-username zhangsan \
-  --allow read \
-  --config /public/KingdeeMCP/secrets/tokens.json
+  --kingdee-username zhangsan
 ```
 
-命令会打印一次明文 Bearer token。配置文件只保存 hash，不保存明文 token。明文 token 需要交给 MCP 客户端配置保存。
+脚本不要求安装 `kingdee-mcp` 包或激活 venv，只需要系统有 Python 3。脚本会优先使用 `--config`、环境变量 `MCP_TOKEN_CONFIG`、`.env` 中的 `MCP_TOKEN_CONFIG`，否则默认写入 `/public/KingdeeMCP/secrets/tokens.json`。
+
+脚本会打印一次明文 Bearer token。配置文件只保存 hash，不保存明文 token。明文 token 需要交给 MCP 客户端配置保存。运行中的 MCP 服务会自动热加载 `tokens.json`，新增、禁用或删除 token 后不需要重启 systemd 服务。
 
 `tokens.json` 结构：
 
@@ -171,6 +170,8 @@ kingdee-mcp-token create \
 ```
 
 当前生产建议只使用 `allowed_tools=["read"]`。legacy profile 名称不会在 lightweight 入口中开放写工具。
+
+兼容旧自动化的 `kingdee-mcp-token` console script 仍保留，但新部署和运维文档推荐使用 `scripts/generate_token.sh`。
 
 ## systemd 部署
 

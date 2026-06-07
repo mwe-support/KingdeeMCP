@@ -127,13 +127,13 @@ Recommended token mapping shape:
       "operator": "zhangsan",
       "kingdee_username": "zhangsan",
       "enabled": true,
-      "allowed_tools": ["read", "save"]
+      "allowed_tools": ["read"]
     },
     "sha256:<hash2>": {
       "operator": "lisi",
       "kingdee_username": "lisi",
       "enabled": true,
-      "allowed_tools": ["read", "audit"]
+      "allowed_tools": ["read"]
     }
   }
 }
@@ -142,6 +142,11 @@ Recommended token mapping shape:
 Security requirements:
 
 - Store token hashes, not plaintext Bearer Tokens.
+- Prefer `/public/KingdeeMCP/scripts/generate_token.sh` for token creation; it
+  uses the repository source tree directly and does not require installing the
+  package console script.
+- The lightweight gateway hot-reloads `MCP_TOKEN_CONFIG`; token creation,
+  disablement, or removal should not require a service restart.
 - Never log Bearer Tokens, AppSecret, SessionId, cookies, or Authorization
   headers.
 - Support revocation by disabling or removing a token mapping.
@@ -300,7 +305,7 @@ the Open Platform specified-user-login list.
 4. Refactor Kingdee login and session cache by `kingdee_username`.
 5. Add tool risk classification and MCP-side authorization checks.
 6. Add audit fields for `operator` and `kingdee_username`.
-7. Add a multi-user `LoginByAppSecret` validation command or script.
+7. Add and maintain multi-user token and `LoginByAppSecret` validation scripts.
 8. Add systemd, Docker, and reverse proxy deployment examples.
 9. Later: integrate enterprise SSO or a central identity service.
 10. Later: add approval workflow for high-risk ERP operations.

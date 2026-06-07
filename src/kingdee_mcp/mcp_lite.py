@@ -6,9 +6,10 @@ import json
 import os
 import sys
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 
 from .auth import AuthError, OperatorContext, authenticate_authorization_header, load_token_records, local_operator_context
@@ -45,28 +46,66 @@ class AsyncLoopRunner:
         self._thread.join(timeout=5)
 
 
-@dataclass(frozen=True)
+@dataclass
 class AuthConfig:
     token_config: str
     auth_disabled: bool
     default_kingdee_username: str
     records: dict[str, Any]
+    fingerprint: tuple[int, int, int, int] | None = None
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     @classmethod
     def load(cls, transport: TransportConfig, service: ServiceConfig) -> "AuthConfig":
-        records = load_token_records(transport.token_config) if transport.token_config and not transport.auth_disabled else {}
+        records: dict[str, Any] = {}
+        fingerprint: tuple[int, int, int, int] | None = None
+        if transport.token_config and not transport.auth_disabled:
+            records = load_token_records(transport.token_config)
+            fingerprint = cls._fingerprint_for_path(transport.token_config)
         return cls(
             token_config=transport.token_config,
             auth_disabled=transport.auth_disabled,
             default_kingdee_username=service.default_username,
             records=records,
+            fingerprint=fingerprint,
         )
 
+    @staticmethod
+    def _fingerprint_for_path(path: str) -> tuple[int, int, int, int] | None:
+        try:
+            stat_result = Path(path).stat()
+        except FileNotFoundError:
+            return None
+        return (stat_result.st_mtime_ns, stat_result.st_ctime_ns, stat_result.st_size, stat_result.st_ino)
+
+    def records_for_request(self) -> dict[str, Any]:
+        if self.auth_disabled or not self.token_config:
+            return self.records
+        fingerprint = self._fingerprint_for_path(self.token_config)
+        if fingerprint == self.fingerprint:
+            return self.records
+        with self._lock:
+            fingerprint = self._fingerprint_for_path(self.token_config)
+            if fingerprint == self.fingerprint:
+                return self.records
+            try:
+                records = load_token_records(self.token_config)
+            except Exception as exc:
+                raise AuthError(f"token config reload failed: {exc}") from exc
+            self.records = records
+            self.fingerprint = fingerprint
+            return self.records
+
     def summary(self) -> dict[str, Any]:
+        records = self.records
+        try:
+            records = self.records_for_request()
+        except AuthError:
+            records = {}
         return {
             "auth_disabled": self.auth_disabled,
             "token_configured": bool(self.token_config),
-            "active_tokens": len([record for record in self.records.values() if getattr(record, "enabled", False)]),
+            "active_tokens": len([record for record in records.values() if getattr(record, "enabled", False)]),
         }
 
 
@@ -91,7 +130,7 @@ class KingdeeLiteApplication:
         if not self.auth.token_config:
             raise AuthError("MCP_TOKEN_CONFIG is required unless MCP_AUTH_DISABLED=true")
         authorization = headers.get("Authorization") or headers.get("authorization") or ""
-        context = authenticate_authorization_header(self.auth.records, authorization)
+        context = authenticate_authorization_header(self.auth.records_for_request(), authorization)
         if context is None:
             raise AuthError("missing or invalid Bearer token")
         return context

@@ -85,12 +85,12 @@ chmod 600 .env
 生成只读 token：
 
 ```bash
-kingdee-mcp-token create \
+/public/KingdeeMCP/scripts/generate_token.sh \
   --operator zhangsan \
-  --kingdee-username zhangsan \
-  --allow read \
-  --config /public/KingdeeMCP/secrets/tokens.json
+  --kingdee-username zhangsan
 ```
+
+这个脚本不需要安装 Python 包入口或激活 venv，只需要系统有 Python 3。它只把 hash 写入 `tokens.json`，明文 Bearer token 只打印一次；服务会自动热加载 token 文件。
 
 启动 systemd：
 

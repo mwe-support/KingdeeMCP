@@ -15,6 +15,7 @@ from kingdee_mcp.mcp_lite import (
     create_http_server,
     process_http_request,
 )
+from kingdee_mcp.token_cli import save_token_config
 
 
 class FakeKingdeeClient:
@@ -78,22 +79,26 @@ def transport_config(token_config: str = "", *, auth_disabled: bool = False, por
     )
 
 
-def write_token_config(path: Path, token: str = "valid-token", *, enabled: bool = True) -> None:
-    path.write_text(
-        json.dumps(
-            {
-                "tokens": {
-                    hash_bearer_token(token): {
-                        "operator": "alice",
-                        "kingdee_username": "kingdee-alice",
-                        "enabled": enabled,
-                        "allowed_tools": ["read"],
-                    }
+def write_token_config(
+    path: Path,
+    token: str = "valid-token",
+    *,
+    enabled: bool = True,
+    operator: str = "alice",
+    kingdee_username: str = "kingdee-alice",
+) -> None:
+    save_token_config(
+        path,
+        {
+            "tokens": {
+                hash_bearer_token(token): {
+                    "operator": operator,
+                    "kingdee_username": kingdee_username,
+                    "enabled": enabled,
+                    "allowed_tools": ["read"],
                 }
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
+            }
+        },
     )
 
 
@@ -177,6 +182,97 @@ def test_invalid_or_disabled_token_rejected_before_tool_logic(tmp_path: Path):
         assert status == 401
         assert body["error"] == "missing_or_invalid_bearer"
         assert fake.sessions == []
+    finally:
+        app.close()
+
+
+def test_token_config_hot_reloads_new_token_without_restart(tmp_path: Path):
+    token_path = tmp_path / "tokens.json"
+    write_token_config(token_path, token="old-token", kingdee_username="kingdee-old")
+    fake = FakeKingdeeClient()
+    app = KingdeeLiteApplication(
+        service_config=service_config(),
+        transport_config=transport_config(str(token_path)),
+        client=fake,  # type: ignore[arg-type]
+    )
+    try:
+        status, body = process_http_request(
+            app,
+            method="POST",
+            path="/mcp",
+            headers={"Authorization": "Bearer old-token"},
+            body=json.dumps(
+                {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "kingdee_smoke_test", "arguments": {"run_query": False}}}
+            ).encode("utf-8"),
+        )
+        assert status == 200
+        assert body["result"]["structuredContent"]["kingdee_username"] == "kingdee-old"
+
+        write_token_config(token_path, token="new-token-for-hot-reload", kingdee_username="kingdee-new")
+
+        status, body = process_http_request(
+            app,
+            method="POST",
+            path="/mcp",
+            headers={"Authorization": "Bearer old-token"},
+            body=json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}).encode("utf-8"),
+        )
+        assert status == 401
+        assert body["error"] == "missing_or_invalid_bearer"
+
+        status, body = process_http_request(
+            app,
+            method="POST",
+            path="/mcp",
+            headers={"Authorization": "Bearer new-token-for-hot-reload"},
+            body=json.dumps(
+                {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "kingdee_smoke_test", "arguments": {"run_query": False}}}
+            ).encode("utf-8"),
+        )
+        assert status == 200
+        assert body["result"]["structuredContent"]["kingdee_username"] == "kingdee-new"
+    finally:
+        app.close()
+
+
+def test_token_config_hot_reload_fails_closed_and_recovers(tmp_path: Path):
+    token_path = tmp_path / "tokens.json"
+    write_token_config(token_path, token="valid-token")
+    fake = FakeKingdeeClient()
+    app = KingdeeLiteApplication(
+        service_config=service_config(),
+        transport_config=transport_config(str(token_path)),
+        client=fake,  # type: ignore[arg-type]
+    )
+    try:
+        token_path.write_text("{not valid json", encoding="utf-8")
+
+        status, body = process_http_request(
+            app,
+            method="POST",
+            path="/mcp",
+            headers={"Authorization": "Bearer valid-token"},
+            body=json.dumps(
+                {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "kingdee_smoke_test", "arguments": {"run_query": False}}}
+            ).encode("utf-8"),
+        )
+        assert status == 401
+        assert body["error"] == "missing_or_invalid_bearer"
+        assert fake.sessions == []
+
+        write_token_config(token_path, token="recovered-token", kingdee_username="kingdee-recovered")
+
+        status, body = process_http_request(
+            app,
+            method="POST",
+            path="/mcp",
+            headers={"Authorization": "Bearer recovered-token"},
+            body=json.dumps(
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "kingdee_smoke_test", "arguments": {"run_query": False}}}
+            ).encode("utf-8"),
+        )
+        assert status == 200
+        assert body["result"]["structuredContent"]["kingdee_username"] == "kingdee-recovered"
     finally:
         app.close()
 

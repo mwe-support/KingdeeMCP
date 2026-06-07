@@ -65,6 +65,17 @@ The production command is `kingdee-mcp`, which imports `kingdee_mcp.main:main` a
 - `kingdee_username` is the real Kingdee user passed to `LoginByAppSecret`.
 - `allowed_tools` may contain `read` for the first lightweight production profile.
 - Plaintext Bearer tokens must not be written to this file or logs.
+- The lightweight gateway hot-reloads this file when it changes. Adding, disabling, or deleting a token does not require restarting `kingdee-mcp.service`.
+
+Generate a read-only token with the repository script:
+
+```bash
+/public/KingdeeMCP/scripts/generate_token.sh \
+  --operator zhangsan \
+  --kingdee-username zhangsan
+```
+
+The script uses only Python standard library plus this repository's source tree. It does not require installing the `kingdee-mcp` package or activating `.venv`.
 
 ## Variables Not Used By The Lightweight Production Entrypoint
 

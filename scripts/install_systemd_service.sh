@@ -28,7 +28,8 @@ systemctl daemon-reload
 
 echo "installed $UNIT_DST"
 echo "next: edit $REPO_DIR/.env; keep MCP_HOST=127.0.0.1 and MCP_PORT=8199"
-echo "token: generate read-only tokens with kingdee-mcp-token create --allow read --config $REPO_DIR/secrets/tokens.json"
+echo "token: generate read-only tokens with $REPO_DIR/scripts/generate_token.sh --operator <name> --kingdee-username <kingdee_user>"
+echo "token reload: kingdee-mcp.service hot-reloads $REPO_DIR/secrets/tokens.json; restart is not required after token changes"
 echo "docs: see $REPO_DIR/docs/configuration.md"
 echo "start: systemctl start $SERVICE_NAME"
 echo "enable: systemctl enable $SERVICE_NAME"

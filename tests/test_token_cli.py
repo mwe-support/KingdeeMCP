@@ -1,5 +1,8 @@
 import json
 import os
+import subprocess
+import sys
+from pathlib import Path
 
 from kingdee_mcp.auth import hash_bearer_token
 from kingdee_mcp.token_cli import build_token_entry, generate_bearer_token, main, parse_allowed_tools
@@ -87,3 +90,42 @@ def test_token_cli_hash_command(capsys):
 
     assert result == 0
     assert capsys.readouterr().out.strip() == hash_bearer_token("abc")
+
+
+def test_generate_token_script_runs_without_installed_package(tmp_path):
+    config_path = tmp_path / "tokens.json"
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "generate_token.py"
+    token = "known-token-for-script-test"
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    env["MCP_TOKEN_CONFIG"] = str(config_path)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-S",
+            str(script_path),
+            "--operator",
+            "script-user",
+            "--kingdee-username",
+            "KD_SCRIPT",
+            "--token",
+            token,
+        ],
+        cwd=str(tmp_path),
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert token in result.stdout
+    data = json.loads(config_path.read_text(encoding="utf-8"))
+    token_hash = hash_bearer_token(token)
+    assert token_hash in data["tokens"]
+    assert token not in config_path.read_text(encoding="utf-8")
+    assert data["tokens"][token_hash]["operator"] == "script-user"
+    assert data["tokens"][token_hash]["kingdee_username"] == "KD_SCRIPT"
+    assert data["tokens"][token_hash]["allowed_tools"] == ["read"]
+    assert oct(os.stat(config_path).st_mode & 0o777) == "0o600"

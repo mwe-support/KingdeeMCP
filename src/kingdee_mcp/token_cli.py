@@ -6,6 +6,7 @@ import os
 import secrets
 import stat
 import sys
+import tempfile
 from pathlib import Path
 from typing import Sequence
 
@@ -96,10 +97,21 @@ def load_token_config(path: Path) -> dict:
 
 def save_token_config(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    existed = path.exists()
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    if not existed:
-        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+    mode = stat.S_IRUSR | stat.S_IWUSR
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+        os.chmod(tmp_path, mode)
+        os.replace(tmp_path, path)
+        os.chmod(path, mode)
+    except Exception:
+        try:
+            tmp_path.unlink()
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def add_token_to_config(path: Path, token_hash: str, entry: dict, *, force: bool = False) -> None:
@@ -117,7 +129,7 @@ def command_create(args: argparse.Namespace) -> int:
     entry = build_token_entry(
         operator=args.operator,
         kingdee_username=args.kingdee_username,
-        allowed_tools=args.allow,
+        allowed_tools=args.allow or ["read"],
         enabled=not args.disabled,
     )
 
