@@ -1,6 +1,6 @@
-> Legacy note: this document references write, audit, delete, push, composite, SQL, or legacy tools that are not registered in the current lightweight production entrypoint. Use it only as future design/reference material, not as current production usage guidance.
+# 示例：新建采购订单
 
-# [Legacy] 示例：新建采购订单
+> Requires a token whose allowed_tools includes write for write, audit, delete, or push tools.
 
 ## 用户提问
 

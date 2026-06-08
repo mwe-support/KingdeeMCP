@@ -1,6 +1,6 @@
-> Legacy note: this document references write, audit, delete, push, composite, SQL, or legacy tools that are not registered in the current lightweight production entrypoint. Use it only as future design/reference material, not as current production usage guidance.
+# 成本管理模块 API 文档
 
-# [Legacy] 成本管理模块 API 文档
+> Requires a token whose allowed_tools includes write for write, audit, delete, or push tools.
 
 金蝶 MCP 成本管理模块涵盖存货核算、产品成本核算、标准成本分析等功能。
 

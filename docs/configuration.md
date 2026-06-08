@@ -21,6 +21,9 @@ The production command is `kingdee-mcp`, which imports `kingdee_mcp.main:main` a
 | `KINGDEE_APP_SEC` | yes | app secret | Third-party system application secret. Keep it server-side only. |
 | `KINGDEE_LCID` | no | `2052` | Locale id. `2052` is Simplified Chinese. |
 | `KINGDEE_USERNAME` | local only | empty in HTTP production | Fallback user for local stdio, `--check`, or `MCP_AUTH_DISABLED=true`. HTTP production maps users from Bearer tokens. |
+| `KINGDEE_SESSION_TTL_SECONDS` | no | `1200` | Proactive per-Kingdee-user session refresh window. After this many seconds, the next call logs in again before calling Kingdee. Set `0` only to disable TTL intentionally. |
+
+Login responses are cached per mapped Kingdee user. The lightweight client sends the full login cookie header on later API calls, including `kdservice-sessionid` and any additional cookies returned by Kingdee such as `ASP.NET_SessionId`.
 
 ## Required MCP Transport Variables
 
@@ -79,7 +82,7 @@ The script uses only Python standard library plus this repository's source tree.
 
 ## Variables Not Used By The Lightweight Production Entrypoint
 
-The first lightweight production version does not use the legacy FastMCP, SQL probing, write-tool, usage-log, or OAuth metadata variables below:
+The lightweight production version does not read SQL probing, usage-log, or OAuth metadata variables below:
 
 ```text
 MCP_JSON_RESPONSE
@@ -103,4 +106,4 @@ MCP_SQLSERVER_SCHEMA
 MCP_SQLSERVER_DRIVER
 ```
 
-Keep those out of `.env` unless the corresponding legacy or optional feature is intentionally reintroduced.
+Keep those out of `.env` unless the corresponding optional feature is intentionally implemented.

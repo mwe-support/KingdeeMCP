@@ -1,5 +1,7 @@
 # 示例：采购询价单
 
+> Requires a token whose allowed_tools includes write for write, audit, delete, or push tools.
+
 ## 查询采购询价单
 
 ### 用户提问

@@ -53,4 +53,4 @@
 ## 注意事项
 
 - 销售订单和采购订单结构类似，当前 lightweight 生产入口只提供只读查询。
-- 下推出库属于 legacy 写操作能力，当前生产不注册 `kingdee_push_bill`。
+- Push operations require a token whose allowed_tools includes write before calling `kingdee_push_bill`.

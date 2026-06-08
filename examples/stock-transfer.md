@@ -1,5 +1,7 @@
 # 示例：调拨申请单
 
+> Requires a token whose allowed_tools includes write for write, audit, delete, or push tools.
+
 ## 查询调拨申请单
 
 ### 用户提问

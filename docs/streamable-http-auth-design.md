@@ -2,7 +2,7 @@
 
 Status: implemented for first lightweight production version.
 
-This document supersedes the earlier FastMCP Streamable HTTP plan. Production now uses `mcp_lite.py`, not FastMCP, Starlette, uvicorn, SSE, or MCP session headers.
+This document describes the current lightweight Streamable HTTP-compatible JSON-RPC plan. Production uses `mcp_lite.py`, not Starlette, uvicorn, SSE, or MCP session headers.
 
 ## Runtime Flow
 
@@ -67,5 +67,4 @@ Do not use stdio fallback for shared remote deployment.
 - Write/audit/delete/push tools.
 - SQL Server probing.
 - OAuth discovery metadata.
-- FastMCP legacy compatibility in production.
 - Usage-log report tools.

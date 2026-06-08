@@ -1,7 +1,7 @@
 # KingdeeMCP Agent API
 
 This document describes the current lightweight production MCP surface.
-Legacy FastMCP write tools, SQL probing tools, and composite write workflows are not registered in the production entrypoint.
+Write tools and composite write workflows are registered in the lightweight entrypoint behind explicit write profiles. SQL probing is not registered in production.
 
 ## Environment
 

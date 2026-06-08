@@ -29,4 +29,4 @@ jobs:
           python scripts/check_harness.py --rules
 
       - name: Run unit tests
-        run: python -m pytest tests/test_server.py -v
+        run: python -m pytest tests/test_lightweight_mcp.py tests/test_tool_profiles.py tests/test_auth_mapping.py tests/test_limits.py -q

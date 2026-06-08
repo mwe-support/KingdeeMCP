@@ -1,32 +1,18 @@
-import asyncio
-
-import pytest
-from mcp.server.fastmcp.exceptions import ToolError
-
-from kingdee_mcp import server
+from tests.test_lightweight_mcp import make_app
 
 
-def test_limit_snapshot_includes_operational_defaults():
-    snapshot = server._limit_snapshot()
+def test_tool_call_returns_server_busy_when_tool_slots_are_full(tmp_path, monkeypatch):
+    monkeypatch.setenv("MCP_MAX_CONCURRENT_TOOLS", "1")
+    monkeypatch.setenv("MCP_TOOL_QUEUE_TIMEOUT_SECONDS", "0.01")
+    app, _fake, token = make_app(tmp_path)
+    context = app.context_from_headers({"Authorization": f"Bearer {token}"})
 
-    assert snapshot["max_concurrent_tools"] >= 1
-    assert snapshot["max_concurrent_kingdee_requests"] >= 1
-    assert snapshot["rate_limit_per_operator_per_minute"] >= 0
+    assert app._tool_semaphore.acquire(timeout=0.01)
+    try:
+        result = app.call_tool("kingdee_smoke_test", {"run_query": False}, context)
+    finally:
+        app._tool_semaphore.release()
+        app.close()
 
-
-@pytest.mark.asyncio
-async def test_sliding_window_rate_limiter_rejects_after_limit():
-    limiter = server.SlidingWindowRateLimiter(limit=1, window_seconds=60)
-
-    await limiter.check("operator-a", label="operator-a")
-    with pytest.raises(ToolError, match="Rate limit exceeded"):
-        await limiter.check("operator-a", label="operator-a")
-
-
-@pytest.mark.asyncio
-async def test_acquire_limited_slot_times_out_when_queue_is_full():
-    semaphore = asyncio.Semaphore(0)
-
-    with pytest.raises(ToolError, match="Server is busy"):
-        async with server._acquire_limited_slot(semaphore, 0.01, "test slot"):
-            pass
+    assert result["isError"] is True
+    assert result["structuredContent"]["error"]["type"] == "server_busy"

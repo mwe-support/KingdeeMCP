@@ -16,7 +16,7 @@ def test_generate_bearer_token_is_random_and_long():
     assert len(first) >= 32
 
 
-def test_parse_allowed_tools_supports_repeat_comma_and_legacy_aliases():
+def test_parse_allowed_tools_supports_repeat_comma_and_profile_aliases():
     assert parse_allowed_tools(["read,save", "audit", "read"]) == ["read", "write"]
 
 

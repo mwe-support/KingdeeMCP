@@ -14,8 +14,8 @@ from .auth import hash_bearer_token
 
 
 DEFAULT_TOKEN_BYTES = 32
-PROFILE_SCOPES = frozenset({"read", "write", "core", "high", "all", "*"})
-DEPRECATED_PROFILE_ALIASES = {
+PROFILE_SCOPES = frozenset({"read", "core", "full-read", "read-all", "write", "ops", "high", "all", "*"})
+PROFILE_ALIASES = {
     "save": "write",
     "audit": "write",
 }
@@ -30,8 +30,8 @@ def generate_bearer_token(nbytes: int = DEFAULT_TOKEN_BYTES) -> str:
 
 def normalize_allowed_tool(item: str) -> str:
     item = item.strip()
-    if item in DEPRECATED_PROFILE_ALIASES:
-        return DEPRECATED_PROFILE_ALIASES[item]
+    if item in PROFILE_ALIASES:
+        return PROFILE_ALIASES[item]
     return item
 
 
@@ -50,10 +50,14 @@ def validate_allowed_tools(tools: Sequence[str]) -> None:
         raise ValueError("'*' grants the full catalog and cannot be combined with other allow values")
     if "all" in tools and len(tools) > 1:
         raise ValueError("'all' grants the full catalog and cannot be combined with other allow values")
-    if "high" in tools and any(item in {"read", "write", "core"} for item in tools):
-        raise ValueError("'high' already grants the full catalog; do not combine it with read/write/core")
+    if "high" in tools and any(item in PROFILE_SCOPES.difference({"high"}) for item in tools):
+        raise ValueError("'high' already grants the full catalog; do not combine it with other profiles")
+    if "ops" in tools and len(tools) > 1:
+        raise ValueError("'ops' is an operational profile and cannot be combined with other profiles")
+    if any(item in {"full-read", "read-all"} for item in tools) and any(item in {"read", "core", "write"} for item in tools):
+        raise ValueError("'full-read/read-all' overlaps read/write; use one profile plus optional explicit tool names")
     if "read" in tools and "write" in tools:
-        raise ValueError("'write' already includes the core read tools; use write only")
+        raise ValueError("'write' already includes read tools; use write only")
     if "core" in tools and any(item in {"read", "write"} for item in tools):
         raise ValueError("'core' overlaps read/write; use one profile plus optional explicit tool names")
 
@@ -179,9 +183,10 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         help=(
-            "allowed profile or explicit tool name; current lightweight production profile: "
-            "read=14 read-only tools. Legacy profile names are accepted for compatibility "
-            "but do not expose write tools in the lightweight production entrypoint; "
+            "allowed profile or explicit tool name; profiles: "
+            "read/core=14 core read tools, full-read/read-all=all read-only tools, "
+            "write=read and write tools, ops=ops placeholders, all/high/*=complete catalog; "
+            "save and audit are accepted as write aliases; "
             "can repeat or use comma list"
         ),
     )

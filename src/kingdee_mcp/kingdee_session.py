@@ -21,6 +21,7 @@ class KingdeeSessionKey:
 @dataclass
 class KingdeeSessionEntry:
     session_id: str
+    cookie_header: str
     created_at: float
     last_used_at: float
 
@@ -47,30 +48,68 @@ class KingdeeSessionManager:
             self._locks[key] = lock
         return lock
 
-    async def get_session(self, kingdee_username: str) -> str:
-        key = self._key(kingdee_username)
+    def _is_fresh(self, entry: KingdeeSessionEntry) -> bool:
+        ttl = self._service_config.session_ttl_seconds
+        if ttl <= 0:
+            return True
+        return time.time() - entry.created_at < ttl
+
+    async def _get_entry(self, key: KingdeeSessionKey) -> KingdeeSessionEntry:
         entry = self._sessions.get(key)
-        if entry:
+        if entry and self._is_fresh(entry):
             entry.last_used_at = time.time()
-            return entry.session_id
+            return entry
 
         async with self._lock_for(key):
             entry = self._sessions.get(key)
-            if entry:
+            if entry and self._is_fresh(entry):
                 entry.last_used_at = time.time()
-                return entry.session_id
+                return entry
+            self._sessions.pop(key, None)
             return await self._login_locked(key)
+
+    async def get_session(self, kingdee_username: str) -> str:
+        return (await self._get_entry(self._key(kingdee_username))).session_id
+
+    async def get_cookie_header(self, kingdee_username: str) -> str:
+        return (await self._get_entry(self._key(kingdee_username))).cookie_header
 
     async def refresh_session(self, kingdee_username: str) -> str:
         key = self._key(kingdee_username)
         async with self._lock_for(key):
             self._sessions.pop(key, None)
-            return await self._login_locked(key)
+            return (await self._login_locked(key)).session_id
+
+    async def refresh_cookie_header(self, kingdee_username: str) -> str:
+        key = self._key(kingdee_username)
+        async with self._lock_for(key):
+            self._sessions.pop(key, None)
+            return (await self._login_locked(key)).cookie_header
 
     def invalidate_session(self, kingdee_username: str) -> None:
         self._sessions.pop(self._key(kingdee_username), None)
 
-    async def _login_locked(self, key: KingdeeSessionKey) -> str:
+    @staticmethod
+    def _cookie_header_from_response(resp: httpx.Response, session_id: str) -> str:
+        parts: list[str] = []
+        seen: set[str] = set()
+        cookies = getattr(resp, "cookies", None)
+        jar = getattr(cookies, "jar", None)
+        for cookie in jar or ():
+            name = str(getattr(cookie, "name", "") or "").strip()
+            value = str(getattr(cookie, "value", "") or "")
+            if not name:
+                continue
+            lowered = name.lower()
+            if lowered in seen:
+                continue
+            seen.add(lowered)
+            parts.append(f"{name}={value}")
+        if "kdservice-sessionid" not in seen:
+            parts.insert(0, f"kdservice-sessionid={session_id}")
+        return "; ".join(parts)
+
+    async def _login_locked(self, key: KingdeeSessionKey) -> KingdeeSessionEntry:
         cfg = self._service_config
         payload = {
             "parameters": [
@@ -99,10 +138,13 @@ class KingdeeSessionManager:
                     f"{data.get('Message', 'unknown error')}"
                 )
             session_id = data["KDSVCSessionId"]
+            cookie_header = self._cookie_header_from_response(resp, session_id)
             now = time.time()
-            self._sessions[key] = KingdeeSessionEntry(
+            entry = KingdeeSessionEntry(
                 session_id=session_id,
+                cookie_header=cookie_header,
                 created_at=now,
                 last_used_at=now,
             )
-            return session_id
+            self._sessions[key] = entry
+            return entry

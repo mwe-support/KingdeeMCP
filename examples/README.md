@@ -1,9 +1,9 @@
 # 金蝶 MCP 使用示例
 
-当前 lightweight 生产入口只注册 14 个核心只读工具。这个目录里保留了两类材料：
+当前 lightweight registry 已迁入只读、写入、审核、下推和轻量运维工具。默认 `read` token 只显示 14 个核心只读工具。这个目录里保留了两类材料：
 
 - 当前可用的只读查询示例。
-- legacy 写操作/下推/审批示例，仅供未来恢复写工具时参考。
+- 需要 `allowed_tools` 包含 `write` 的写操作、下推、审批示例。
 
 ## 当前 lightweight 生产可用示例
 
@@ -18,9 +18,9 @@
 | 采购询价单只读查询 | [`purchase-inquiry.md`](./purchase-inquiry.md) | `kingdee_query_bills` |
 | 调拨申请单只读查询 | [`stock-transfer.md`](./stock-transfer.md) | `kingdee_query_stock_bills` |
 
-## Legacy 参考示例
+## Write Profile 示例
 
-下面这些文档涉及写入、提交、审核、反审核、删除、下推、复合工作流或未注册的历史工具。它们不适用于当前 lightweight 生产入口：
+下面这些文档涉及写入、提交、审核、反审核、删除、下推或复合工作流。调用前需要 Bearer token 的 `allowed_tools` 包含 `write`、`all`、`high` 或明确工具名：
 
 | 场景 | 文件 |
 | --- | --- |

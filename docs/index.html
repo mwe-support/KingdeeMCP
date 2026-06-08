@@ -967,7 +967,7 @@
               </svg>
             </div>
             <h3>易于扩展</h3>
-            <p>基于轻量工具注册表扩展自定义只读工具，生产入口不依赖 FastMCP。</p>
+            <p>基于轻量工具注册表扩展自定义只读工具，生产入口保持标准库 JSON-RPC 协议层。</p>
           </div>
         </div>
       </div>
@@ -1211,7 +1211,7 @@ curl -sS http://127.0.0.1:8199/healthz</code></pre>
           </div>
           <div class="faq-item">
             <div class="faq-question">Q: 如何添加自定义业务逻辑？</div>
-            <div class="faq-answer">当前轻量实现应在 light_tools.py 的工具注册表中添加工具，并保持生产入口不依赖 FastMCP。</div>
+            <div class="faq-answer">当前轻量实现应在 light_tools.py 的工具注册表中添加工具，并保持生产入口使用标准库 JSON-RPC 协议层。</div>
           </div>
         </div>
       </div>

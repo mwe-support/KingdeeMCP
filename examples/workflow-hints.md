@@ -1,6 +1,6 @@
-> Legacy note: this document references write, audit, delete, push, composite, SQL, or legacy tools that are not registered in the current lightweight production entrypoint. Use it only as future design/reference material, not as current production usage guidance.
+# 工作流提示（Workflow Hints）
 
-# [Legacy] 工作流提示（Workflow Hints）
+> Requires a token whose allowed_tools includes write for write, audit, delete, or push tools.
 
 > 按需检索的上下文片段，不是静态入口。AI 执行具体任务时按需参考。
 
@@ -129,13 +129,13 @@ kingdee_push_and_audit(form_id, source_bill_nos, ...) → 目标单已审核生�
 | **新建并审核** | `kingdee_create_and_audit` | → 已审核（一站式） |
 | **下推并审核** | `kingdee_push_and_audit` | 源单→目标单已审核（一站式） |
 
-> 参考：`src/kingdee_mcp/server.py` 中 `DOC_LIFECYCLE`、`KNOWN_ERROR_PATTERNS`、`KNOWN_ERROR_NEXT_ACTIONS`
+> Current workflow guardrails live in `harness/`; tool lifecycle outputs are returned by lightweight write handlers in `src/kingdee_mcp/light_tools.py`.
 
 ---
 
 ## 错误响应中的 `matched.next_action_tool`
 
-错误若命中 `KNOWN_ERROR_PATTERNS`，会在 `errors[].matched` 中携带建议工具：
+Business errors should be handled from the structured `errors` or `response_status` fields returned by the lightweight write handlers.
 
 ```json
 {

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from kingdee_mcp.auth import hash_bearer_token
 from kingdee_mcp.config import ServiceConfig, TransportConfig
+from kingdee_mcp.light_tools import CORE_READ_TOOL_NAMES
 from kingdee_mcp.mcp_lite import (
     KingdeeLiteApplication,
     _read_stdio_message,
@@ -22,6 +23,7 @@ class FakeKingdeeClient:
     def __init__(self) -> None:
         self.sessions: list[str] = []
         self.posts: list[tuple[str, dict, str]] = []
+        self.raw_calls: list[tuple[str, str, dict, str]] = []
         self.views: list[tuple[str, str, str]] = []
         self.metadata_calls: list[tuple[str, str]] = []
 
@@ -42,6 +44,10 @@ class FakeKingdeeClient:
     async def post(self, ep_key, payload, context):
         self.posts.append((ep_key, payload, context.kingdee_username))
         return [["row-1"]]
+
+    async def raw(self, ep_key, form_id, data_obj, context):
+        self.raw_calls.append((ep_key, form_id, data_obj, context.kingdee_username))
+        return {"Result": {"ResponseStatus": {"IsSuccess": True}, "FID": "100001", "FBillNo": "B001"}}
 
     async def view(self, form_id, bill_id, context):
         self.views.append((form_id, bill_id, context.kingdee_username))
@@ -86,6 +92,7 @@ def write_token_config(
     enabled: bool = True,
     operator: str = "alice",
     kingdee_username: str = "kingdee-alice",
+    allowed_tools: list[str] | None = None,
 ) -> None:
     save_token_config(
         path,
@@ -95,16 +102,16 @@ def write_token_config(
                     "operator": operator,
                     "kingdee_username": kingdee_username,
                     "enabled": enabled,
-                    "allowed_tools": ["read"],
+                    "allowed_tools": allowed_tools or ["read"],
                 }
             }
         },
     )
 
 
-def make_app(tmp_path: Path, *, auth_disabled: bool = False, enabled: bool = True) -> tuple[KingdeeLiteApplication, FakeKingdeeClient, str]:
+def make_app(tmp_path: Path, *, auth_disabled: bool = False, enabled: bool = True, allowed_tools: list[str] | None = None) -> tuple[KingdeeLiteApplication, FakeKingdeeClient, str]:
     token_path = tmp_path / "tokens.json"
-    write_token_config(token_path, enabled=enabled)
+    write_token_config(token_path, enabled=enabled, allowed_tools=allowed_tools)
     fake = FakeKingdeeClient()
     app = KingdeeLiteApplication(
         service_config=service_config(),
@@ -141,7 +148,7 @@ def test_http_initialize_and_tools_list_are_plain_json(tmp_path: Path):
         assert response.headers["content-type"].startswith("application/json")
         tools = body["result"]["tools"]
         assert len(tools) == 14
-        assert {tool["name"] for tool in tools} == set(app.tools)
+        assert {tool["name"] for tool in tools} == CORE_READ_TOOL_NAMES
     finally:
         server.shutdown()
         server.server_close()
@@ -296,7 +303,7 @@ def test_token_config_hot_reload_fails_closed_and_recovers(tmp_path: Path):
         app.close()
 
 
-def test_write_tool_not_registered_and_does_not_call_kingdee(tmp_path: Path):
+def test_write_tool_disallowed_for_read_token_and_does_not_call_kingdee(tmp_path: Path):
     app, fake, token = make_app(tmp_path)
     try:
         status, body = process_http_request(
@@ -310,9 +317,59 @@ def test_write_tool_not_registered_and_does_not_call_kingdee(tmp_path: Path):
         )
         assert status == 200
         assert body["result"]["isError"] is True
-        assert body["result"]["structuredContent"]["error"]["type"] == "unknown_tool"
+        assert body["result"]["structuredContent"]["error"]["type"] == "disallowed_tool"
         assert fake.sessions == []
         assert fake.posts == []
+        assert fake.raw_calls == []
+    finally:
+        app.close()
+
+
+def test_full_read_profile_lists_migrated_read_tools(tmp_path: Path):
+    app, _fake, token = make_app(tmp_path, allowed_tools=["full-read"])
+    try:
+        status, body = process_http_request(
+            app,
+            method="POST",
+            path="/mcp",
+            headers={"Authorization": f"Bearer {token}"},
+            body=json.dumps({"jsonrpc": "2.0", "id": 5, "method": "tools/list", "params": {}}).encode("utf-8"),
+        )
+        assert status == 200
+        names = {tool["name"] for tool in body["result"]["tools"]}
+        assert len(names) > 14
+        assert "kingdee_query_production_orders" in names
+        assert "kingdee_save_bill" not in names
+        assert "kingdee_usage_stats" not in names
+    finally:
+        app.close()
+
+
+def test_write_profile_can_call_migrated_save_tool(tmp_path: Path):
+    app, fake, token = make_app(tmp_path, allowed_tools=["write"])
+    try:
+        status, body = process_http_request(
+            app,
+            method="POST",
+            path="/mcp",
+            headers={"Authorization": f"Bearer {token}"},
+            body=json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 6,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "kingdee_save_bill",
+                        "arguments": {"form_id": "PUR_PurchaseOrder", "model": {"FBillTypeID": {"FNumber": "CGDD01_SYS"}}},
+                    },
+                }
+            ).encode("utf-8"),
+        )
+        assert status == 200
+        assert body["result"]["isError"] is False
+        assert fake.raw_calls[0][0] == "save"
+        assert fake.raw_calls[0][1] == "PUR_PurchaseOrder"
+        assert isinstance(fake.raw_calls[0][2]["Model"], dict)
     finally:
         app.close()
 

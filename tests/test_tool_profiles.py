@@ -1,57 +1,54 @@
-from kingdee_mcp import server
+from kingdee_mcp.light_tools import (
+    ALL_LIGHTWEIGHT_TOOL_NAMES,
+    ALL_READ_TOOL_NAMES,
+    CORE_READ_TOOL_NAMES,
+    MIGRATED_OPS_TOOL_NAMES,
+    MIGRATED_WRITE_TOOL_NAMES,
+)
+from kingdee_mcp.mcp_lite import tool_allowed
 
 
-def _all_tools():
-    return server._original_tool_manager_list_tools()
+def _visible(scopes: set[str]) -> set[str]:
+    allowed = frozenset(scopes)
+    return {name for name in ALL_LIGHTWEIGHT_TOOL_NAMES if tool_allowed(name, allowed)}
 
 
 def test_read_scope_exposes_only_core_read_tools():
-    names = {
-        tool.name
-        for tool in server._filter_tools_for_scopes(_all_tools(), frozenset({"read"}))
-    }
+    names = _visible({"read"})
 
-    assert names == server._CORE_READ_TOOLS
+    assert names == CORE_READ_TOOL_NAMES
     assert len(names) == 14
     assert "kingdee_smoke_test" in names
-    assert "kingdee_delete_bills" not in names
+    assert "kingdee_save_bill" not in names
     assert "kingdee_query_operation_logs" not in names
 
 
-def test_write_and_core_scopes_expose_curated_core_tools():
-    all_tools = _all_tools()
-    write_names = {
-        tool.name
-        for tool in server._filter_tools_for_scopes(all_tools, frozenset({"write"}))
-    }
-    core_names = {
-        tool.name
-        for tool in server._filter_tools_for_scopes(all_tools, frozenset({"core"}))
-    }
+def test_full_read_scope_exposes_migrated_read_tools_without_write_or_ops():
+    names = _visible({"full-read"})
 
-    assert write_names == server._CORE_TOOLS
-    assert core_names == server._CORE_TOOLS
-    assert len(write_names) == 20
-    assert "kingdee_save_bill" in write_names
-    assert "kingdee_unaudit_bills" not in write_names
-    assert "kingdee_push_and_audit" not in write_names
-    assert "kingdee_delete_bills" not in write_names
+    assert names == ALL_READ_TOOL_NAMES
+    assert "kingdee_query_production_orders" in names
+    assert "kingdee_query_operation_logs" in names
+    assert "kingdee_save_bill" not in names
+    assert "kingdee_usage_stats" not in names
 
 
-def test_high_scope_exposes_full_catalog():
-    all_tools = _all_tools()
-    high_names = {
-        tool.name
-        for tool in server._filter_tools_for_scopes(all_tools, frozenset({"high"}))
-    }
+def test_write_scope_exposes_read_and_write_tools_without_ops():
+    names = _visible({"write"})
 
-    assert high_names == {tool.name for tool in all_tools}
-    assert len(high_names) > len(server._CORE_TOOLS)
+    assert names == ALL_READ_TOOL_NAMES | MIGRATED_WRITE_TOOL_NAMES
+    assert "kingdee_save_bill" in names
+    assert "kingdee_delete_bills" in names
+    assert "kingdee_usage_stats" not in names
 
 
-def test_tool_manager_list_tools_uses_current_scope(monkeypatch):
-    monkeypatch.setattr(server, "_current_allowed_tool_scopes", lambda: frozenset({"read"}))
+def test_ops_scope_exposes_only_lightweight_ops_placeholders():
+    names = _visible({"ops"})
 
-    names = {tool.name for tool in server.mcp._tool_manager.list_tools()}
+    assert names == MIGRATED_OPS_TOOL_NAMES
+    assert "kingdee_usage_stats" in names
+    assert "kingdee_query_inventory" not in names
 
-    assert names == server._CORE_READ_TOOLS
+
+def test_all_scope_exposes_complete_lightweight_catalog():
+    assert _visible({"all"}) == ALL_LIGHTWEIGHT_TOOL_NAMES

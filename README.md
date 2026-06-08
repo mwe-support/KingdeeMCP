@@ -1,6 +1,6 @@
 # KingdeeMCP - 金蝶云星空轻量 MCP 网关
 
-KingdeeMCP 当前生产实现是一个轻量 MCP Gateway，用于让 MCP 客户端安全地调用金蝶云星空 K/3 Cloud WebAPI。它不再依赖 FastMCP/Starlette/uvicorn/SSE，而是使用 Python 标准库实现普通 JSON-RPC HTTP/stdio 协议层，并保留金蝶官方 `LoginByAppSecret` 认证链路。
+KingdeeMCP 当前生产实现是一个轻量 MCP Gateway，用于让 MCP 客户端安全地调用金蝶云星空 K/3 Cloud WebAPI。协议层只使用 Python 标准库实现普通 JSON-RPC HTTP/stdio，不使用 Starlette、uvicorn、SSE 或 `mcp-session-id`，并保留金蝶官方 `LoginByAppSecret` 认证链路。
 
 ## 当前结论
 
@@ -10,7 +10,7 @@ KingdeeMCP 当前生产实现是一个轻量 MCP Gateway，用于让 MCP 客户�
 - HTTP 响应是 `application/json` + `Content-Length`，不返回 `text/event-stream`，不使用 `mcp-session-id`。
 - Bearer Token 映射到 `operator`、`kingdee_username`、`allowed_tools`。
 - 金蝶 WebAPI 仍使用共享 `AppID/AppSecret` + 指定金蝶用户 `LoginByAppSecret` 登录。
-- 当前生产只注册 14 个核心只读工具；写入、审核、删除、反审核、下推、SQL 探查不进入第一版 lightweight 工具面。
+- 工具已统一迁入 lightweight registry。默认 `read` token 只暴露 14 个核心只读工具；`full-read` 暴露完整只读目录；`write` 暴露读写工具；`ops` 只暴露轻量运维占位工具；`all`/`high`/`*` 暴露完整 lightweight 目录。
 
 ## 架构
 
@@ -35,12 +35,11 @@ kingdee-mcp -> kingdee_mcp.main:main -> kingdee_mcp.mcp_lite
 | 文件 | 作用 |
 | --- | --- |
 | `src/kingdee_mcp/mcp_lite.py` | 轻量 MCP HTTP/stdio 协议层。 |
-| `src/kingdee_mcp/light_tools.py` | 14 个生产只读工具、手写 JSON Schema 和参数校验。 |
+| `src/kingdee_mcp/light_tools.py` | lightweight 工具 registry、手写 JSON Schema 和参数校验。 |
 | `src/kingdee_mcp/kingdee_client.py` | 金蝶 WebAPI 调用封装。 |
 | `src/kingdee_mcp/kingdee_session.py` | 每个金蝶用户的 session cache 和刷新。 |
 | `src/kingdee_mcp/auth.py` | Bearer token hash 校验和 OperatorContext。 |
 | `src/kingdee_mcp/config.py` | 环境变量读取。 |
-| `src/kingdee_mcp/server.py` | 旧 FastMCP 实现，仅作为 legacy 参考。 |
 
 ## 安装
 
@@ -53,7 +52,7 @@ python3 -m venv .venv
 pip install -e .
 ```
 
-生产依赖保持轻量，必需运行依赖是 `httpx`。旧 FastMCP/Pydantic/pyodbc 能力不属于当前生产入口。
+生产依赖保持轻量，必需运行依赖是 `httpx`。`pyodbc`、Starlette、uvicorn、Pydantic 不属于生产入口依赖。
 
 ## 配置文件
 
@@ -76,6 +75,7 @@ KINGDEE_APP_ID=your_app_id
 KINGDEE_APP_SEC=your_app_secret
 KINGDEE_LCID=2052
 KINGDEE_USERNAME=
+KINGDEE_SESSION_TTL_SECONDS=1200
 
 MCP_TRANSPORT=streamable-http
 MCP_HOST=127.0.0.1
@@ -103,6 +103,7 @@ MCP_HTTP_REQUEST_QUEUE_SIZE=128
 | `KINGDEE_APP_SEC` | 应用密钥 | 是 | 金蝶后台第三方系统登录授权中的应用密钥，只能保存在服务器。 |
 | `KINGDEE_LCID` | `2052` | 否 | 金蝶语言标识，`2052` 为简体中文。 |
 | `KINGDEE_USERNAME` | 空 | 仅本地测试 | stdio、`--check`、`MCP_AUTH_DISABLED=true` 时的本地 fallback 用户。HTTP 生产不用它。 |
+| `KINGDEE_SESSION_TTL_SECONDS` | `1200` | 否 | 每个金蝶用户登录会话的主动刷新时间。超过该时间后，下次调用前会重新登录；设为 `0` 可关闭 TTL，不建议生产关闭。 |
 | `MCP_TRANSPORT` | `streamable-http` | 是 | 启动 lightweight HTTP 网关。`stdio` 仅用于本地测试。 |
 | `MCP_HOST` | `127.0.0.1` | 是 | MCP origin 监听地址。出于安全考虑必须只监听本机。 |
 | `MCP_PORT` | `8199` | 是 | MCP origin 本地端口。Cloudflared 连接这个端口。 |
@@ -169,7 +170,7 @@ cd /public/KingdeeMCP
 }
 ```
 
-当前生产建议只使用 `allowed_tools=["read"]`。legacy profile 名称不会在 lightweight 入口中开放写工具。
+Recommended production token profile is allowed_tools=["read"]. Use full-read/write/ops/all only when that operator needs the broader catalog.
 
 兼容旧自动化的 `kingdee-mcp-token` console script 仍保留，但新部署和运维文档推荐使用 `scripts/generate_token.sh`。
 
@@ -279,7 +280,7 @@ Authorization: Bearer <kingdee mcp bearer token>
 | `kingdee_query_pending_approvals` | 按状态查询待处理/已审核/驳回类单据。 | `form_id`, `status`, `limit` |
 | `kingdee_query_workflow_status` | 查看单据工作流/单据状态摘要。 | `form_id`, `bill_id` |
 
-未注册的 legacy 工具调用应返回 unknown/disallowed，不应触发金蝶 WebAPI。
+Disallowed or unknown tool calls return unknown_tool/disallowed_tool and must not call Kingdee WebAPI.
 
 ## 测试
 
@@ -324,9 +325,9 @@ kingdee_smoke_test(run_query=false)
 - [docs/permission-architecture.md](docs/permission-architecture.md): Bearer Token 到金蝶用户的权限模型。
 - [deploy/cloudflared/README.md](deploy/cloudflared/README.md): Cloudflared Docker Compose 运行说明。
 
-## Legacy 说明
+## Lightweight Tool Catalog
 
-旧 FastMCP `server.py`、写操作工具、SQL 探查、usage-log 工具和大量历史 examples 仍可作为参考材料，但不是当前 lightweight 生产工具面。后续如果要恢复写操作，应先重新设计审批、限流、审计和权限边界，再注册到 lightweight 工具表。
+The lightweight registry now contains the migrated read, write, and ops tool names. Default read tokens still expose only the 14 core read tools; broader profiles are explicit.
 
 ## License
 

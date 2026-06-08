@@ -5,24 +5,6 @@ import hmac
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
-
-try:  # Legacy FastMCP compatibility only; production lightweight gateway does not require mcp.
-    from mcp.server.auth.middleware.auth_context import get_access_token as _mcp_get_access_token
-    from mcp.server.auth.provider import AccessToken, TokenVerifier
-except Exception:  # pragma: no cover - exercised in minimal production installs without mcp.
-    _mcp_get_access_token = None
-
-    @dataclass(frozen=True)
-    class AccessToken:  # type: ignore[no-redef]
-        token: str
-        client_id: str
-        scopes: list[str]
-        subject: str
-        claims: dict[str, Any]
-
-    class TokenVerifier:  # type: ignore[no-redef]
-        pass
 
 
 @dataclass(frozen=True)
@@ -99,51 +81,12 @@ def authenticate_authorization_header(records: dict[str, TokenRecord], authoriza
     return context_from_token_record(record) if record else None
 
 
-class MappingTokenVerifier(TokenVerifier):
-    def __init__(self, records: dict[str, TokenRecord]):
-        self._records = records
-
-    @classmethod
-    def from_file(cls, path: str) -> "MappingTokenVerifier":
-        return cls(load_token_records(path))
-
-    async def verify_token(self, token: str):
-        record = match_bearer_token(self._records, token)
-        if record is None:
-            return None
-        return AccessToken(
-            token=record.token_hash,
-            client_id=record.operator,
-            scopes=sorted(record.allowed_tools),
-            subject=record.kingdee_username,
-            claims={
-                "operator": record.operator,
-                "kingdee_username": record.kingdee_username,
-                "allowed_tools": sorted(record.allowed_tools),
-            },
-        )
-
-
-def operator_context_from_access_token(access_token: Any) -> OperatorContext:
-    claims: dict[str, Any] = access_token.claims or {}
-    operator = str(claims.get("operator") or access_token.client_id or "").strip()
-    kingdee_username = str(claims.get("kingdee_username") or access_token.subject or "").strip()
-    allowed_tools = frozenset(str(x).strip() for x in (claims.get("allowed_tools") or access_token.scopes or []) if str(x).strip())
-    if not operator or not kingdee_username:
-        raise AuthError("authenticated token is missing operator or kingdee_username")
-    return OperatorContext(operator=operator, kingdee_username=kingdee_username, allowed_tools=allowed_tools)
-
-
 def local_operator_context(default_kingdee_username: str) -> OperatorContext:
     username = (default_kingdee_username or "").strip()
     if not username:
         raise AuthError("KINGDEE_USERNAME is required for local stdio mode or unauthenticated calls")
-    return OperatorContext(operator="local-stdio", kingdee_username=username, allowed_tools=frozenset({"read", "write", "high"}))
+    return OperatorContext(operator="local-stdio", kingdee_username=username, allowed_tools=frozenset({"read", "write", "ops"}))
 
 
 def current_operator_context(default_kingdee_username: str = "") -> OperatorContext:
-    if _mcp_get_access_token is not None:
-        access_token = _mcp_get_access_token()
-        if access_token is not None:
-            return operator_context_from_access_token(access_token)
     return local_operator_context(default_kingdee_username)

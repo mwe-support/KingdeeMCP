@@ -16,6 +16,18 @@ _EP = {
     "query": "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.ExecuteBillQuery.common.kdsvc",
     "view": "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.View.common.kdsvc",
     "metadata": "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.QueryBusinessInfo.common.kdsvc",
+    "save": "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Save.common.kdsvc",
+    "submit": "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Submit.common.kdsvc",
+    "audit": "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Audit.common.kdsvc",
+    "unaudit": "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.UnAudit.common.kdsvc",
+    "delete": "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Delete.common.kdsvc",
+    "push": "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Push.common.kdsvc",
+    "user": "Kingdee.BOS.WebApi.ServicesStub.UserService.QueryUser.common.kdsvc",
+    "role": "Kingdee.BOS.WebApi.ServicesStub.RoleService.QueryRole.common.kdsvc",
+    "permission": "Kingdee.BOS.WebApi.ServicesStub.PermissionService.QueryPermission.common.kdsvc",
+    "sequence": "Kingdee.BOS.WebApi.ServicesStub.SequenceRuleService.QuerySequenceRule.common.kdsvc",
+    "number_rule": "Kingdee.BOS.WebApi.ServicesStub.NumberRuleService.QueryNumberRule.common.kdsvc",
+    "sysconfig": "Kingdee.BOS.WebApi.ServicesStub.SystemConfigService.QuerySystemConfig.common.kdsvc",
 }
 
 _SESSION_EXPIRED_MARKERS = (
@@ -56,6 +68,12 @@ class KingdeeWebAPIClient:
 
     async def refresh_session(self, context: OperatorContext) -> str:
         return await self._session_manager.refresh_session(context.kingdee_username)
+
+    async def cookie_header(self, context: OperatorContext) -> str:
+        return await self._session_manager.get_cookie_header(context.kingdee_username)
+
+    async def refresh_cookie_header(self, context: OperatorContext) -> str:
+        return await self._session_manager.refresh_cookie_header(context.kingdee_username)
 
     @staticmethod
     def is_session_expired_response(resp: httpx.Response) -> bool:
@@ -98,18 +116,18 @@ class KingdeeWebAPIClient:
                 proxy=None,
                 transport=httpx.AsyncHTTPTransport(http1=True),
             ) as client:
-                session = await self.ensure_session(context)
+                cookie_header = await self.cookie_header(context)
                 resp = await client.post(
                     self.url(ep_key),
                     data={"data": json.dumps(request_data, ensure_ascii=False)},
-                    headers={"Cookie": f"kdservice-sessionid={session}"},
+                    headers={"Cookie": cookie_header},
                 )
                 if self.is_session_expired_response(resp):
-                    session = await self.refresh_session(context)
+                    cookie_header = await self.refresh_cookie_header(context)
                     resp = await client.post(
                         self.url(ep_key),
                         data={"data": json.dumps(request_data, ensure_ascii=False)},
-                        headers={"Cookie": f"kdservice-sessionid={session}"},
+                        headers={"Cookie": cookie_header},
                     )
                 resp.raise_for_status()
                 return resp.json()
@@ -122,23 +140,23 @@ class KingdeeWebAPIClient:
                 proxy=None,
                 transport=httpx.AsyncHTTPTransport(http1=True),
             ) as client:
-                session = await self.ensure_session(context)
+                cookie_header = await self.cookie_header(context)
                 resp = await client.post(
                     self.url(ep_key),
                     content=body.encode("utf-8"),
                     headers={
                         "Content-Type": "application/json; charset=utf-8",
-                        "Cookie": f"kdservice-sessionid={session}",
+                        "Cookie": cookie_header,
                     },
                 )
                 if self.is_session_expired_response(resp):
-                    session = await self.refresh_session(context)
+                    cookie_header = await self.refresh_cookie_header(context)
                     resp = await client.post(
                         self.url(ep_key),
                         content=body.encode("utf-8"),
                         headers={
                             "Content-Type": "application/json; charset=utf-8",
-                            "Cookie": f"kdservice-sessionid={session}",
+                            "Cookie": cookie_header,
                         },
                     )
                 resp.raise_for_status()

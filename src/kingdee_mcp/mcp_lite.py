@@ -15,7 +15,15 @@ from typing import Any
 from .auth import AuthError, OperatorContext, authenticate_authorization_header, load_token_records, local_operator_context
 from .config import ServiceConfig, TransportConfig, load_service_config, load_transport_config
 from .kingdee_client import KingdeeWebAPIClient
-from .light_tools import CORE_READ_TOOL_NAMES, ToolDefinition, build_core_read_tools
+from .light_tools import (
+    ALL_LIGHTWEIGHT_TOOL_NAMES,
+    ALL_READ_TOOL_NAMES,
+    CORE_READ_TOOL_NAMES,
+    MIGRATED_OPS_TOOL_NAMES,
+    MIGRATED_WRITE_TOOL_NAMES,
+    ToolDefinition,
+    build_core_read_tools,
+)
 
 SERVER_NAME = "kingdee-mcp-lite"
 SERVER_VERSION = "0.2.0"
@@ -196,8 +204,16 @@ def tool_allowed(name: str, allowed_tools: frozenset[str]) -> bool:
         return False
     if name in allowed_tools:
         return True
-    if allowed_tools.intersection({"read", "core", "write", "high", "all", "*"}):
+    if allowed_tools.intersection({"*", "all", "high"}):
+        return name in ALL_LIGHTWEIGHT_TOOL_NAMES
+    if allowed_tools.intersection({"read", "core"}):
         return name in CORE_READ_TOOL_NAMES
+    if allowed_tools.intersection({"full-read", "read-all"}):
+        return name in ALL_READ_TOOL_NAMES
+    if "write" in allowed_tools:
+        return name in ALL_READ_TOOL_NAMES or name in MIGRATED_WRITE_TOOL_NAMES
+    if "ops" in allowed_tools:
+        return name in MIGRATED_OPS_TOOL_NAMES
     return False
 
 
@@ -242,6 +258,10 @@ def coerce_value(name: str, value: Any, prop: dict[str, Any]) -> Any:
         return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
     if expected == "array":
         return value if isinstance(value, list) else [value]
+    if expected == "object":
+        if isinstance(value, dict):
+            return value
+        raise ValueError(f"{name} must be an object")
     svalue = str(value or "").strip()
     enum = prop.get("enum")
     if enum and svalue not in enum:

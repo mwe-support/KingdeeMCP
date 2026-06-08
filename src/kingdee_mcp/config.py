@@ -16,6 +16,7 @@ class ServiceConfig:
     app_secret: str
     lcid: int
     default_username: str = ""
+    session_ttl_seconds: float = 1200.0
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,13 @@ def _bool_env(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _float_env(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    return float(value)
+
+
 def load_service_config() -> ServiceConfig:
     return ServiceConfig(
         server_url=os.getenv("KINGDEE_SERVER_URL", "http://your-server/k3cloud/"),
@@ -48,6 +56,7 @@ def load_service_config() -> ServiceConfig:
         app_secret=os.getenv("KINGDEE_APP_SEC", ""),
         lcid=int(os.getenv("KINGDEE_LCID", "2052")),
         default_username=os.getenv("KINGDEE_USERNAME", ""),
+        session_ttl_seconds=_float_env("KINGDEE_SESSION_TTL_SECONDS", 1200.0),
     )
 
 

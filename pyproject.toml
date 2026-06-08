@@ -28,20 +28,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-legacy = [
-    "mcp[cli]>=1.0.0",
-    "pydantic>=2.0.0",
-    "pyodbc>=5.0.0",
-]
 test = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
 ]
 
 [project.urls]
-Homepage = "https://github.com/WaHaiLong/KingdeeMCP"
-Repository = "https://github.com/WaHaiLong/KingdeeMCP"
-Documentation = "https://github.com/WaHaiLong/KingdeeMCP#readme"
+Homepage = "https://github.com/mwe-support/KingdeeMCP"
+Repository = "https://github.com/mwe-support/KingdeeMCP"
+Documentation = "https://github.com/mwe-support/KingdeeMCP#readme"
 
 [project.scripts]
 kingdee-mcp = "kingdee_mcp.main:main"

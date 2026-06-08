@@ -10,9 +10,8 @@ WebAPI operations as MCP tools for AI clients.
 
 Primary files:
 
-- `src/kingdee_mcp/server.py`: main MCP server, tool registration, Kingdee
-  WebAPI calls, login/session handling, usage logging, and optional SQL Server
-  helpers.
+- `src/kingdee_mcp/light_tools.py`: lightweight tool registry, hand-written
+  JSON schemas, and tool handlers.
 - `README.md`: install and user configuration.
 - `.mcp.json.example`: current local stdio MCP example.
 - `docs/permission-architecture.md`: design reference only. Do not assume it is
@@ -31,7 +30,6 @@ Current MCP transport:
   through Cloudflare Tunnel/Access.
 - Local stdio uses the same lightweight dispatcher and MCP content-length
   framing.
-- Legacy `server.py` / FastMCP remains reference-only during the transition.
 
 Current Kingdee authentication:
 
@@ -45,9 +43,11 @@ Current Kingdee authentication:
   - `KINGDEE_LCID`
 - `_login()` sends `[ACCT_ID, USERNAME, APP_ID, APP_SEC, LCID]`.
 - Login returns `KDSVCSessionId`.
-- Later requests send `Cookie: kdservice-sessionid=<session>`.
-- `_session_id` is global, so the current process effectively represents one
-  Kingdee user.
+- Lightweight production requests send the full login Cookie header. It must
+  include `kdservice-sessionid=<session>` and should preserve any extra cookies
+  returned by Kingdee, such as `ASP.NET_SessionId`.
+- Lightweight production sessions are cached per mapped Kingdee user with a
+  proactive TTL controlled by `KINGDEE_SESSION_TTL_SECONDS` (default `1200`).
 
 Important runtime details:
 
@@ -56,8 +56,11 @@ Important runtime details:
   proves otherwise.
 - Session expiration is detected by HTTP 401 or response text containing session
   expiration hints, then retried after relogin.
-- SQL Server probing via `MCP_SQLSERVER_*` is legacy-only and out of scope for
-  the first lightweight production entrypoint.
+- The TTL refresh is preventive. Keep the response-based expiration retry as a
+  second line of defense for sessions invalidated early by Kingdee.
+- SQL Server probing via `MCP_SQLSERVER_*` is not part of the lightweight
+  production build. Keep it out unless an explicit optional ops module is
+  designed.
 
 ## Business Context
 
@@ -155,7 +158,7 @@ Security requirements:
 
 ## Required Code Direction
 
-Keep changes focused. Most current behavior is concentrated in `server.py`;
+Keep changes focused. Most current behavior is concentrated in `light_tools.py`;
 refactor gradually and keep every step verifiable.
 
 Core changes needed:
@@ -171,7 +174,6 @@ Core changes needed:
    - Hash the token and look it up in the token mapping.
    - Resolve an `OperatorContext` with at least `operator`, `kingdee_username`,
      and tool permission policy.
-   - If legacy FastMCP is revisited, authenticate in
      an ASGI wrapper or reverse proxy and inject only trusted identity
      downstream. Do not let clients self-report `kingdee_username` in tool
      parameters.
@@ -180,9 +182,13 @@ Core changes needed:
    - `_session_id` is not suitable for multi-user HTTP service.
    - Add a session cache keyed by
      `(server_url, acct_id, app_id, kingdee_username)`.
-   - Use a per-key async lock so concurrent first requests for the same user do
-     not trigger multiple logins.
-   - If one user's session expires, relogin only that user.
+  - Use a per-key async lock so concurrent first requests for the same user do
+    not trigger multiple logins.
+  - If one user's session expires, relogin only that user.
+   - Cache the full login Cookie header, not just the raw `KDSVCSessionId`,
+     because some Kingdee deployments also require `ASP.NET_SessionId`.
+   - Refresh proactively after `KINGDEE_SESSION_TTL_SECONDS` to reduce
+     long-idle stale session failures.
 
 4. Make Kingdee login identity explicit.
    - Add a small object such as `KingdeeIdentity`, `KingdeeAuthContext`, or
@@ -229,7 +235,7 @@ MCP_TOOL_CALL_TIMEOUT_SECONDS=120
 MCP_HTTP_REQUEST_QUEUE_SIZE=128
 ```
 
-Do not carry legacy FastMCP/SQL/logging variables into the lightweight
+Do not carry SQL/logging variables into the lightweight
 production `.env` unless that feature is intentionally reintroduced. See `docs/configuration.md` for the full current environment contract.
 
 Local development example:
@@ -346,12 +352,13 @@ Design rules for this refactor:
   - no `text/event-stream`
   - no `mcp-session-id`
 - The protocol layer should use Python standard library primitives (`http.server`, JSON, stdio content-length framing).
-- Do not import FastMCP, Starlette, uvicorn, or Pydantic from the production entrypoint.
+- Do not import Starlette, uvicorn, or Pydantic from the production entrypoint.
 - Keep Kingdee WebAPI authentication separate from MCP ingress authentication:
   - MCP Bearer Token authenticates the caller.
   - The token mapping resolves `operator` and `kingdee_username`.
   - Kingdee WebAPI still uses `LoginByAppSecret(acct_id, kingdee_username, app_id, app_secret, lcid)`.
   - Cache Kingdee sessions per Kingdee user and refresh only the affected user when a session expires.
+  - Preserve the full login Cookie header and refresh proactively using `KINGDEE_SESSION_TTL_SECONDS`.
 - Keep `httpx` for Kingdee WebAPI calls and force HTTP/1.1.
 - First lightweight production version exposes only the curated read-only tool surface:
   - `kingdee_smoke_test`
@@ -368,6 +375,5 @@ Design rules for this refactor:
   - `kingdee_get_fields`
   - `kingdee_query_pending_approvals`
   - `kingdee_query_workflow_status`
-- Write, audit, unaudit, delete, push, SQL probe, and legacy full-catalog tools are out of scope for the first lightweight production entrypoint.
+- Write, audit, unaudit, delete, and push tools are registered under the write profile. SQL probing and in-process usage logs are not production features.
 - Local stdio should use the same lightweight dispatcher as HTTP. It may use `KINGDEE_USERNAME` as the local user when no HTTP Bearer context exists.
-- Keep the old FastMCP `server.py` only as legacy reference/compatibility during transition; do not add new production behavior there unless explicitly requested.

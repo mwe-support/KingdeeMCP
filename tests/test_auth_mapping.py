@@ -2,11 +2,10 @@ import json
 
 import pytest
 
-from kingdee_mcp.auth import MappingTokenVerifier, hash_bearer_token, load_token_records
+from kingdee_mcp.auth import authenticate_authorization_header, hash_bearer_token, load_token_records
 
 
-@pytest.mark.asyncio
-async def test_mapping_token_verifier_returns_operator_claims(tmp_path):
+def test_authenticate_authorization_header_returns_operator_context(tmp_path):
     token = "dev-token"
     config = {
         "tokens": {
@@ -21,19 +20,16 @@ async def test_mapping_token_verifier_returns_operator_claims(tmp_path):
     path = tmp_path / "tokens.json"
     path.write_text(json.dumps(config), encoding="utf-8")
 
-    verifier = MappingTokenVerifier.from_file(str(path))
-    access_token = await verifier.verify_token(token)
+    records = load_token_records(str(path))
+    context = authenticate_authorization_header(records, f"Bearer {token}")
 
-    assert access_token is not None
-    assert access_token.token == hash_bearer_token(token)
-    assert access_token.client_id == "zhangsan"
-    assert access_token.subject == "KD_ZHANGSAN"
-    assert access_token.claims["kingdee_username"] == "KD_ZHANGSAN"
-    assert access_token.claims["allowed_tools"] == ["read", "save"]
+    assert context is not None
+    assert context.operator == "zhangsan"
+    assert context.kingdee_username == "KD_ZHANGSAN"
+    assert context.allowed_tools == frozenset({"read", "save"})
 
 
-@pytest.mark.asyncio
-async def test_mapping_token_verifier_rejects_disabled_token(tmp_path):
+def test_authenticate_authorization_header_rejects_disabled_token(tmp_path):
     token = "disabled-token"
     config = {
         "tokens": {
@@ -48,9 +44,9 @@ async def test_mapping_token_verifier_rejects_disabled_token(tmp_path):
     path = tmp_path / "tokens.json"
     path.write_text(json.dumps(config), encoding="utf-8")
 
-    verifier = MappingTokenVerifier.from_file(str(path))
+    records = load_token_records(str(path))
 
-    assert await verifier.verify_token(token) is None
+    assert authenticate_authorization_header(records, f"Bearer {token}") is None
 
 
 def test_token_config_requires_operator_and_kingdee_username(tmp_path):
