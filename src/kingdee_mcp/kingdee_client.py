@@ -18,6 +18,20 @@ _EP = {
     "metadata": "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.QueryBusinessInfo.common.kdsvc",
 }
 
+_SESSION_EXPIRED_MARKERS = (
+    "会话信息已丢失",
+    "重新登录",
+    "重新登陆",
+    "未登录",
+    "会话",
+    "session",
+    "not logged",
+    "not login",
+    "login again",
+    "invalid session",
+    "kdsvcsessionid",
+)
+
 
 class KingdeeWebAPIClient:
     """Small Kingdee WebAPI client shared by the lightweight MCP tools."""
@@ -46,7 +60,12 @@ class KingdeeWebAPIClient:
     @staticmethod
     def is_session_expired_response(resp: httpx.Response) -> bool:
         text = resp.text or ""
-        return resp.status_code == 401 or (resp.status_code == 200 and ("??" in text or "session" in text.lower()))
+        if resp.status_code == 401:
+            return True
+        if resp.status_code != 200:
+            return False
+        normalized = text.lower()
+        return any(marker in normalized for marker in _SESSION_EXPIRED_MARKERS)
 
     @staticmethod
     def query_payload(

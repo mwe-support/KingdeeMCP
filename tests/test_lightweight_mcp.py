@@ -148,6 +148,25 @@ def test_http_initialize_and_tools_list_are_plain_json(tmp_path: Path):
         app.close()
 
 
+def test_core_tool_descriptions_do_not_contain_mojibake(tmp_path: Path):
+    app, _fake, token = make_app(tmp_path)
+    try:
+        status, body = process_http_request(
+            app,
+            method="POST",
+            path="/mcp",
+            headers={"Authorization": f"Bearer {token}"},
+            body=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}).encode("utf-8"),
+        )
+        assert status == 200
+        payload = json.dumps(body, ensure_ascii=False)
+        assert "??" not in payload
+        assert "采购订单" in payload
+        assert "即时库存" in payload
+    finally:
+        app.close()
+
+
 def test_valid_token_maps_to_kingdee_user_for_tool_call(tmp_path: Path):
     app, fake, token = make_app(tmp_path)
     try:

@@ -40,17 +40,17 @@ CORE_READ_TOOL_NAMES = frozenset(
 )
 
 FORM_CATALOG: dict[str, dict[str, Any]] = {
-    "PUR_PurchaseOrder": {"name": "????", "alias": ["??", "????", "PO"], "desc": "???????", "fields": "FID,FBillNo,FDate,FDocumentStatus,FSupplierId.FName,FPurchaseDeptId.FName,FTaxAmount,FAllAmount,FReceiveQty,FStockInQty"},
-    "SAL_SaleOrder": {"name": "????", "alias": ["??", "????", "SO"], "desc": "???????", "fields": "FID,FBillNo,FDate,FDocumentStatus,FCustId.FName,FTotalAmount"},
-    "STK_InStock": {"name": "?????", "alias": ["??", "????"], "desc": "?????????", "fields": "FID,FBillNo,FDate,FDocumentStatus,FStockOrgId.FName"},
-    "SAL_OUTSTOCK": {"name": "?????", "alias": ["??", "????"], "desc": "?????????", "fields": "FID,FBillNo,FDate,FDocumentStatus,FStockOrgId.FName"},
-    "STK_MisDelivery": {"name": "?????", "alias": ["????", "??"], "desc": "?????????", "fields": "FID,FBillNo,FDate,FDocumentStatus,FStockOrgId.FName"},
-    "STK_Miscellaneous": {"name": "?????", "alias": ["????", "??"], "desc": "?????????", "fields": "FID,FBillNo,FDate,FDocumentStatus,FStockOrgId.FName"},
-    "STK_TransferDirect": {"name": "?????", "alias": ["??", "????"], "desc": "???????", "fields": "FID,FBillNo,FDate,FDocumentStatus,FStockOutId.FName,FStockInId.FName"},
-    "STK_Inventory": {"name": "????", "alias": ["??", "????", "???"], "desc": "???????", "fields": "FMaterialId.FNumber,FMaterialId.FName,FStockId.FName,FBaseQty,FBaseUnitId.FName"},
-    "BD_Material": {"name": "??", "alias": ["??", "??", "SKU"], "desc": "???????", "fields": "FMaterialId,FNumber,FName,FSpecification,FMaterialGroup.FName"},
-    "BD_Customer": {"name": "??", "alias": ["??"], "desc": "???????", "fields": "FNumber,FName,FShortName,FContact,FPhone,FDocumentStatus"},
-    "BD_Supplier": {"name": "???", "alias": ["???"], "desc": "????????", "fields": "FNumber,FName,FShortName,FContact,FPhone,FDocumentStatus"},
+    "PUR_PurchaseOrder": {"name": "采购订单", "alias": ["采购", "采购订单", "PO"], "desc": "供应商采购订单", "fields": "FID,FBillNo,FDate,FDocumentStatus,FSupplierId.FName,FPurchaseDeptId.FName,FTaxAmount,FAllAmount,FReceiveQty,FStockInQty"},
+    "SAL_SaleOrder": {"name": "销售订单", "alias": ["销售", "销售订单", "SO"], "desc": "客户销售订单", "fields": "FID,FBillNo,FDate,FDocumentStatus,FCustId.FName,FTotalAmount"},
+    "STK_InStock": {"name": "采购入库单", "alias": ["入库", "采购入库"], "desc": "采购业务入库单据", "fields": "FID,FBillNo,FDate,FDocumentStatus,FStockOrgId.FName"},
+    "SAL_OUTSTOCK": {"name": "销售出库单", "alias": ["出库", "销售出库"], "desc": "销售业务出库单据", "fields": "FID,FBillNo,FDate,FDocumentStatus,FStockOrgId.FName"},
+    "STK_MisDelivery": {"name": "其他出库单", "alias": ["其他出库", "出库"], "desc": "非销售业务出库单据", "fields": "FID,FBillNo,FDate,FDocumentStatus,FStockOrgId.FName"},
+    "STK_Miscellaneous": {"name": "其他入库单", "alias": ["其他入库", "入库"], "desc": "非采购业务入库单据", "fields": "FID,FBillNo,FDate,FDocumentStatus,FStockOrgId.FName"},
+    "STK_TransferDirect": {"name": "直接调拨单", "alias": ["调拨", "直接调拨"], "desc": "库存调拨单据", "fields": "FID,FBillNo,FDate,FDocumentStatus,FStockOutId.FName,FStockInId.FName"},
+    "STK_Inventory": {"name": "即时库存", "alias": ["库存", "即时库存", "库存查询"], "desc": "物料当前库存", "fields": "FMaterialId.FNumber,FMaterialId.FName,FStockId.FName,FBaseQty,FBaseUnitId.FName"},
+    "BD_Material": {"name": "物料", "alias": ["物料", "产品", "SKU"], "desc": "物料基础资料", "fields": "FMaterialId,FNumber,FName,FSpecification,FMaterialGroup.FName"},
+    "BD_Customer": {"name": "客户", "alias": ["客户"], "desc": "客户基础资料", "fields": "FNumber,FName,FShortName,FContact,FPhone,FDocumentStatus"},
+    "BD_Supplier": {"name": "供应商", "alias": ["供应商"], "desc": "供应商基础资料", "fields": "FNumber,FName,FShortName,FContact,FPhone,FDocumentStatus"},
 }
 
 
@@ -93,7 +93,7 @@ def build_core_read_tools(client: KingdeeWebAPIClient) -> dict[str, ToolDefiniti
     async def purchase_progress(args: dict[str, Any], context: OperatorContext) -> dict[str, Any]:
         fields = "FID,FBillNo,FDate,FDocumentStatus,FSupplierId.FName,FMaterialId.FNumber,FMaterialId.FName,FQty,FReceiveQty,FStockInQty,FPrice,FTaxPrice,FAllAmount"
         data = rows(await client.post("query", client.query_payload("PUR_PurchaseOrder", fields, args["filter_string"] or "FDocumentStatus='C'", "FBillNo DESC,FPOOrderEntry_LineID ASC", args["start_row"], args["limit"]), context))
-        return {"tip": "FReceiveQty=???????FStockInQty=??????", "count": len(data), "has_more": len(data) == args["limit"], "data": data}
+        return {"tip": "FReceiveQty=累计收料数量，FStockInQty=累计入库数量", "count": len(data), "has_more": len(data) == args["limit"], "data": data}
 
     async def sale_orders(args: dict[str, Any], context: OperatorContext) -> dict[str, Any]:
         fields = args["field_keys"] if args["field_keys"] != DEFAULT_QUERY_FIELDS else "FID,FBillNo,FDate,FDocumentStatus,FCustId.FName,FTotalAmount"
@@ -132,7 +132,7 @@ def build_core_read_tools(client: KingdeeWebAPIClient) -> dict[str, ToolDefiniti
         info = FORM_CATALOG.get(form_id, {})
         result: dict[str, Any] = {
             "form_id": form_id,
-            "name": info.get("name", "????"),
+            "name": info.get("name", "未知表单"),
             "desc": info.get("desc", ""),
             "recommended_fields": info.get("fields", "FID,FBillNo,FNumber,FName,FDate,FDocumentStatus"),
         }
@@ -167,28 +167,28 @@ def build_core_read_tools(client: KingdeeWebAPIClient) -> dict[str, ToolDefiniti
         data = await client.view(args["form_id"], args["bill_id"], context)
         bill_data = data.get("Result", {}).get("Result", data) if isinstance(data, dict) else {}
         status = bill_data.get("FDocumentStatus", "") if isinstance(bill_data, dict) else ""
-        return {"form_id": args["form_id"], "bill_id": args["bill_id"], "document_status": status, "status_name": STATUS_MAP.get(status, "??"), "bill_no": bill_data.get("FBillNo", "") if isinstance(bill_data, dict) else "", "bill_data": bill_data}
+        return {"form_id": args["form_id"], "bill_id": args["bill_id"], "document_status": status, "status_name": STATUS_MAP.get(status, "未知"), "bill_no": bill_data.get("FBillNo", "") if isinstance(bill_data, dict) else "", "bill_data": bill_data}
 
     return {
         "kingdee_smoke_test": ToolDefinition("kingdee_smoke_test", "Check MCP auth, mapped Kingdee user login, service limits, and optional tiny read-only query.", smoke_schema(), smoke),
-        "kingdee_query_bills": ToolDefinition("kingdee_query_bills", "?????????????????????????", query_schema(required_form=True), query_bills),
-        "kingdee_view_bill": ToolDefinition("kingdee_view_bill", "?????? FID ???????", view_schema(), view_bill),
-        "kingdee_query_purchase_orders": ToolDefinition("kingdee_query_purchase_orders", "?????????", query_schema(required_form=False), purchase_orders),
-        "kingdee_query_purchase_order_progress": ToolDefinition("kingdee_query_purchase_order_progress", "???????????????", purchase_progress_schema(), purchase_progress),
-        "kingdee_query_sale_orders": ToolDefinition("kingdee_query_sale_orders", "?????????", query_schema(required_form=False), sale_orders),
-        "kingdee_query_stock_bills": ToolDefinition("kingdee_query_stock_bills", "??????????", query_schema(required_form=True), stock_bills),
-        "kingdee_query_inventory": ToolDefinition("kingdee_query_inventory", "??????????????????", inventory_schema(), inventory),
-        "kingdee_query_materials": ToolDefinition("kingdee_query_materials", "?????????", materials_schema(), materials),
-        "kingdee_query_partners": ToolDefinition("kingdee_query_partners", "?????????????", partners_schema(), partners),
-        "kingdee_list_forms": ToolDefinition("kingdee_list_forms", "??????????????", object_schema({"keyword": string_prop("??????????????", "")}), list_forms),
-        "kingdee_get_fields": ToolDefinition("kingdee_get_fields", "???????????? QueryBusinessInfo ??????", object_schema({"form_id": string_prop("?????? BD_Material?PUR_PurchaseOrder", required=True)}, ["form_id"]), get_fields),
-        "kingdee_query_pending_approvals": ToolDefinition("kingdee_query_pending_approvals", "???????/???/??????????", workflow_query_schema(), pending_approvals),
-        "kingdee_query_workflow_status": ToolDefinition("kingdee_query_workflow_status", "??????????????", workflow_status_schema(), workflow_status),
+        "kingdee_query_bills": ToolDefinition("kingdee_query_bills", "通用单据查询，按表单编码、字段、过滤条件和分页返回数据。", query_schema(required_form=True), query_bills),
+        "kingdee_view_bill": ToolDefinition("kingdee_view_bill", "按表单编码和 FID 查看单据详情。", view_schema(), view_bill),
+        "kingdee_query_purchase_orders": ToolDefinition("kingdee_query_purchase_orders", "查询采购订单列表。", query_schema(required_form=False), purchase_orders),
+        "kingdee_query_purchase_order_progress": ToolDefinition("kingdee_query_purchase_order_progress", "查询采购订单收料和入库进度。", purchase_progress_schema(), purchase_progress),
+        "kingdee_query_sale_orders": ToolDefinition("kingdee_query_sale_orders", "查询销售订单列表。", query_schema(required_form=False), sale_orders),
+        "kingdee_query_stock_bills": ToolDefinition("kingdee_query_stock_bills", "查询库存相关单据。", query_schema(required_form=True), stock_bills),
+        "kingdee_query_inventory": ToolDefinition("kingdee_query_inventory", "查询即时库存，默认只返回有库存的记录。", inventory_schema(), inventory),
+        "kingdee_query_materials": ToolDefinition("kingdee_query_materials", "查询物料基础资料。", materials_schema(), materials),
+        "kingdee_query_partners": ToolDefinition("kingdee_query_partners", "查询客户或供应商基础资料。", partners_schema(), partners),
+        "kingdee_list_forms": ToolDefinition("kingdee_list_forms", "列出常用金蝶表单编码和推荐字段。", object_schema({"keyword": string_prop("按表单编码、名称或别名过滤", "")}), list_forms),
+        "kingdee_get_fields": ToolDefinition("kingdee_get_fields", "返回表单推荐字段，并尝试读取 QueryBusinessInfo 元数据。", object_schema({"form_id": string_prop("表单编码，例如 BD_Material 或 PUR_PurchaseOrder", required=True)}, ["form_id"]), get_fields),
+        "kingdee_query_pending_approvals": ToolDefinition("kingdee_query_pending_approvals", "查询待提交、审核中、已审核或被驳回的单据。", workflow_query_schema(), pending_approvals),
+        "kingdee_query_workflow_status": ToolDefinition("kingdee_query_workflow_status", "查询指定单据的审核状态。", workflow_status_schema(), workflow_status),
     }
 
 
 DEFAULT_QUERY_FIELDS = "FID,FBillNo,FDate,FDocumentStatus"
-STATUS_MAP = {"A": "??", "B": "???", "C": "???", "D": "????", "Z": "??"}
+STATUS_MAP = {"A": "创建", "B": "审核中", "C": "已审核", "D": "重新审核", "Z": "暂存"}
 
 
 def object_schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
@@ -219,12 +219,12 @@ def bool_prop(description: str = "", default: bool = False) -> dict[str, Any]:
 
 def query_schema(*, required_form: bool) -> dict[str, Any]:
     props = {
-        "form_id": string_prop("??????", "" if not required_form else None, required=required_form),
-        "filter_string": string_prop("????", ""),
-        "field_keys": string_prop("?????????", DEFAULT_QUERY_FIELDS),
-        "order_string": string_prop("????", "FID DESC"),
-        "start_row": int_prop("?????", 0, minimum=0),
-        "limit": int_prop("????", 20, minimum=1, maximum=100),
+        "form_id": string_prop("表单编码", "" if not required_form else None, required=required_form),
+        "filter_string": string_prop("过滤条件", ""),
+        "field_keys": string_prop("需要返回的字段列表", DEFAULT_QUERY_FIELDS),
+        "order_string": string_prop("排序条件", "FID DESC"),
+        "start_row": int_prop("起始行号", 0, minimum=0),
+        "limit": int_prop("返回条数", 20, minimum=1, maximum=100),
     }
     return object_schema(props, ["form_id"] if required_form else [])
 
@@ -232,38 +232,38 @@ def query_schema(*, required_form: bool) -> dict[str, Any]:
 def smoke_schema() -> dict[str, Any]:
     return object_schema(
         {
-            "run_query": bool_prop("?????????????", True),
-            "form_id": string_prop("??????", "STK_Inventory"),
-            "field_keys": string_prop("??????", "FMaterialId.FNumber,FMaterialId.FName,FStockId.FName,FBaseQty"),
-            "filter_string": string_prop("??????", "FBaseQty > 0"),
-            "limit": int_prop("????????", 1, minimum=1, maximum=5),
+            "run_query": bool_prop("是否执行一次小型只读查询", True),
+            "form_id": string_prop("查询表单编码", "STK_Inventory"),
+            "field_keys": string_prop("查询字段列表", "FMaterialId.FNumber,FMaterialId.FName,FStockId.FName,FBaseQty"),
+            "filter_string": string_prop("查询过滤条件", "FBaseQty > 0"),
+            "limit": int_prop("查询返回条数", 1, minimum=1, maximum=5),
         }
     )
 
 
 def view_schema() -> dict[str, Any]:
-    return object_schema({"form_id": string_prop("??????", required=True), "bill_id": string_prop("???? FID", required=True), "mode": {"type": "string", "enum": ["summary", "full"], "default": "summary"}}, ["form_id", "bill_id"])
+    return object_schema({"form_id": string_prop("表单编码", required=True), "bill_id": string_prop("单据 FID", required=True), "mode": {"type": "string", "enum": ["summary", "full"], "default": "summary"}}, ["form_id", "bill_id"])
 
 
 def purchase_progress_schema() -> dict[str, Any]:
-    return object_schema({"filter_string": string_prop("????", "FDocumentStatus='C'"), "start_row": int_prop(default=0), "limit": int_prop(default=20, minimum=1, maximum=100)})
+    return object_schema({"filter_string": string_prop("过滤条件", "FDocumentStatus='C'"), "start_row": int_prop(default=0), "limit": int_prop(default=20, minimum=1, maximum=100)})
 
 
 def inventory_schema() -> dict[str, Any]:
-    return object_schema({"filter_string": string_prop("????", "FBaseQty>0"), "field_keys": string_prop("????", "FMaterialId.FNumber,FMaterialId.FName,FStockId.FName,FBaseQty,FBaseUnitId.FName"), "start_row": int_prop(default=0), "limit": int_prop(default=20, minimum=1, maximum=100)})
+    return object_schema({"filter_string": string_prop("过滤条件", "FBaseQty>0"), "field_keys": string_prop("字段列表", "FMaterialId.FNumber,FMaterialId.FName,FStockId.FName,FBaseQty,FBaseUnitId.FName"), "start_row": int_prop(default=0), "limit": int_prop(default=20, minimum=1, maximum=100)})
 
 
 def materials_schema() -> dict[str, Any]:
-    return object_schema({"filter_string": string_prop("????", ""), "field_keys": string_prop("????", "FMaterialId,FNumber,FName,FSpecification,FMaterialGroup.FName"), "start_row": int_prop(default=0), "limit": int_prop(default=20, minimum=1, maximum=100)})
+    return object_schema({"filter_string": string_prop("过滤条件", ""), "field_keys": string_prop("字段列表", "FMaterialId,FNumber,FName,FSpecification,FMaterialGroup.FName"), "start_row": int_prop(default=0), "limit": int_prop(default=20, minimum=1, maximum=100)})
 
 
 def partners_schema() -> dict[str, Any]:
-    return object_schema({"partner_type": {"type": "string", "enum": ["BD_Customer", "BD_Supplier"]}, "filter_string": string_prop("????", ""), "field_keys": string_prop("????", "FNumber,FName,FShortName,FContact,FPhone,FDocumentStatus"), "start_row": int_prop(default=0), "limit": int_prop(default=20, minimum=1, maximum=100)}, ["partner_type"])
+    return object_schema({"partner_type": {"type": "string", "enum": ["BD_Customer", "BD_Supplier"]}, "filter_string": string_prop("过滤条件", ""), "field_keys": string_prop("字段列表", "FNumber,FName,FShortName,FContact,FPhone,FDocumentStatus"), "start_row": int_prop(default=0), "limit": int_prop(default=20, minimum=1, maximum=100)}, ["partner_type"])
 
 
 def workflow_query_schema() -> dict[str, Any]:
-    return object_schema({"form_id": string_prop("?????????????", ""), "status": {"type": "string", "enum": ["pending", "approved", "rejected", "all"], "default": "pending"}, "limit": int_prop(default=20, minimum=1, maximum=100)})
+    return object_schema({"form_id": string_prop("表单编码，留空时查询常用业务单据", ""), "status": {"type": "string", "enum": ["pending", "approved", "rejected", "all"], "default": "pending"}, "limit": int_prop(default=20, minimum=1, maximum=100)})
 
 
 def workflow_status_schema() -> dict[str, Any]:
-    return object_schema({"form_id": string_prop("????", required=True), "bill_id": string_prop("???? FID", required=True)}, ["form_id", "bill_id"])
+    return object_schema({"form_id": string_prop("表单编码", required=True), "bill_id": string_prop("单据 FID", required=True)}, ["form_id", "bill_id"])
