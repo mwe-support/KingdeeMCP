@@ -146,9 +146,30 @@ MCP_SQLSERVER_DRIVER
 
 ```bash
 cd /public/KingdeeMCP
-/public/KingdeeMCP/scripts/generate_token.sh \
-  --operator zhangsan \
-  --kingdee-username zhangsan
+/public/KingdeeMCP/scripts/generate_token.sh --operator zhangsan --kingdee-username zhangsan --allow read
+```
+
+Common `--allow` examples:
+
+```bash
+# Core read-only tools, recommended for normal production users
+/public/KingdeeMCP/scripts/generate_token.sh --operator zhangsan --kingdee-username zhangsan --allow read
+
+# All read-only tools
+/public/KingdeeMCP/scripts/generate_token.sh --operator lisi --kingdee-username lisi --allow full-read
+
+# Write-capable token. The write profile already includes read tools.
+/public/KingdeeMCP/scripts/generate_token.sh --operator wangwu --kingdee-username wangwu --allow write
+
+# Explicit tools only; repeat --allow or use comma-separated values
+/public/KingdeeMCP/scripts/generate_token.sh --operator zhaoliu --kingdee-username zhaoliu --allow kingdee_smoke_test --allow kingdee_query_purchase_orders
+/public/KingdeeMCP/scripts/generate_token.sh --operator zhaoliu --kingdee-username zhaoliu --allow kingdee_smoke_test,kingdee_query_purchase_orders
+
+# Complete catalog, trusted admins only
+/public/KingdeeMCP/scripts/generate_token.sh --operator admin --kingdee-username admin --allow all
+
+# Machine-readable JSON output
+/public/KingdeeMCP/scripts/generate_token.sh --operator lisi --kingdee-username lisi --allow read --json
 ```
 
 脚本不要求安装 `kingdee-mcp` 包或激活 venv，只需要系统有 Python 3。脚本会优先使用 `--config`、环境变量 `MCP_TOKEN_CONFIG`、`.env` 中的 `MCP_TOKEN_CONFIG`，否则默认写入 `/public/KingdeeMCP/secrets/tokens.json`。
@@ -220,21 +241,57 @@ Authorization: Bearer <kingdee mcp bearer token>
 
 浏览器或 WebView 客户端如果报 `failed fetch`，通常是 CORS 预检失败。推荐在 Cloudflare Access 应用中启用 `options_preflight_bypass`，不要再配置 Access 自身的 CORS allowlist；`OPTIONS` 会直接到达本地轻量 MCP 服务，由 `MCP_CORS_ALLOW_ORIGINS` 控制响应头。`POST` 工具调用仍然必须同时通过 Cloudflare Service Auth 和 MCP Bearer token。
 
-## MCP 客户端配置模板
+## MCP Client Configuration
 
-远程 HTTP 客户端应连接 Cloudflare 域名，而不是服务器本地端口。示例字段名会因客户端不同而略有差异：
+For WorkBuddy behind Cloudflare Access, prefer `npx mcp-remote` as a local stdio proxy. WorkBuddy connects to the local proxy process, and `mcp-remote` calls the remote Cloudflare URL with the required headers. This avoids the native HTTP transport reconnect and `failed fetch` issues seen during batch tool calls.
+
+Recommended WorkBuddy config:
 
 ```json
 {
   "mcpServers": {
-    "kingdee": {
+    "kingdee_mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote@latest",
+        "https://your-cloudflare-domain.example.com/mcp",
+        "--transport",
+        "http-only",
+        "--header",
+        "Authorization:${KINGDEE_MCP_AUTH_HEADER}",
+        "--header",
+        "CF-Access-Client-Id:${KINGDEE_CF_ACCESS_CLIENT_ID}",
+        "--header",
+        "CF-Access-Client-Secret:${KINGDEE_CF_ACCESS_CLIENT_SECRET}"
+      ],
+      "env": {
+        "KINGDEE_MCP_AUTH_HEADER": "Bearer <kingdee-mcp-token>",
+        "KINGDEE_CF_ACCESS_CLIENT_ID": "<cloudflare-access-client-id>",
+        "KINGDEE_CF_ACCESS_CLIENT_SECRET": "<cloudflare-access-client-secret>"
+      },
+      "disabled": false
+    }
+  }
+}
+```
+
+Keep the header args in the `Header:${ENV_VAR}` form. The env value may contain spaces, for example `Bearer <token>`, while the arg itself stays safe for Windows client argument parsing.
+
+Native HTTP direct mode is experimental. Use it only when the client has stable Streamable HTTP support, forwards Cloudflare Access headers correctly, and does not disconnect during batch calls:
+
+```json
+{
+  "mcpServers": {
+    "kingdee_mcp": {
       "type": "http",
       "url": "https://your-cloudflare-domain.example.com/mcp",
       "headers": {
         "Authorization": "Bearer <kingdee-mcp-token>",
         "CF-Access-Client-Id": "<cloudflare-access-client-id>",
         "CF-Access-Client-Secret": "<cloudflare-access-client-secret>"
-      }
+      },
+      "disabled": false
     }
   }
 }

@@ -1092,7 +1092,9 @@ MCP_AUTH_DISABLED=false</code></pre>
             <div class="step-content">
               <h3>生成 Bearer Token</h3>
               <div class="code-wrapper">
-                <pre><code>/public/KingdeeMCP/scripts/generate_token.sh   --operator zhangsan   --kingdee-username zhangsan</code></pre>
+                <pre><code>/public/KingdeeMCP/scripts/generate_token.sh --operator zhangsan --kingdee-username zhangsan --allow read
+/public/KingdeeMCP/scripts/generate_token.sh --operator lisi --kingdee-username lisi --allow full-read
+/public/KingdeeMCP/scripts/generate_token.sh --operator zhaoliu --kingdee-username zhaoliu --allow kingdee_smoke_test --allow kingdee_query_purchase_orders</code></pre>
               </div>
             </div>
           </div>

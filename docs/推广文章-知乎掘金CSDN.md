@@ -85,9 +85,20 @@ chmod 600 .env
 生成只读 token：
 
 ```bash
-/public/KingdeeMCP/scripts/generate_token.sh \
-  --operator zhangsan \
-  --kingdee-username zhangsan
+/public/KingdeeMCP/scripts/generate_token.sh --operator zhangsan --kingdee-username zhangsan --allow read
+```
+
+More `--allow` examples:
+
+```bash
+# All read-only tools
+/public/KingdeeMCP/scripts/generate_token.sh --operator lisi --kingdee-username lisi --allow full-read
+
+# Write-capable token. The write profile already includes read tools.
+/public/KingdeeMCP/scripts/generate_token.sh --operator wangwu --kingdee-username wangwu --allow write
+
+# Explicit tools only
+/public/KingdeeMCP/scripts/generate_token.sh --operator zhaoliu --kingdee-username zhaoliu --allow kingdee_smoke_test --allow kingdee_query_purchase_orders
 ```
 
 这个脚本不需要安装 Python 包入口或激活 venv，只需要系统有 Python 3。它只把 hash 写入 `tokens.json`，明文 Bearer token 只打印一次；服务会自动热加载 token 文件。
@@ -100,23 +111,40 @@ sudo systemctl restart kingdee-mcp.service
 curl -sS http://127.0.0.1:8199/healthz
 ```
 
-## 客户端示例
+## Client Example
+
+For WorkBuddy and other MCP clients behind Cloudflare Access, use `npx mcp-remote` as the recommended connection mode. The local proxy forwards the MCP Bearer token and Cloudflare Access Service Auth headers to the remote endpoint.
 
 ```json
 {
   "mcpServers": {
-    "kingdee": {
-      "type": "http",
-      "url": "https://your-cloudflare-domain.example.com/mcp",
-      "headers": {
-        "Authorization": "Bearer <kingdee-mcp-token>",
-        "CF-Access-Client-Id": "<cloudflare-access-client-id>",
-        "CF-Access-Client-Secret": "<cloudflare-access-client-secret>"
-      }
+    "kingdee_mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote@latest",
+        "https://your-cloudflare-domain.example.com/mcp",
+        "--transport",
+        "http-only",
+        "--header",
+        "Authorization:${KINGDEE_MCP_AUTH_HEADER}",
+        "--header",
+        "CF-Access-Client-Id:${KINGDEE_CF_ACCESS_CLIENT_ID}",
+        "--header",
+        "CF-Access-Client-Secret:${KINGDEE_CF_ACCESS_CLIENT_SECRET}"
+      ],
+      "env": {
+        "KINGDEE_MCP_AUTH_HEADER": "Bearer <kingdee-mcp-token>",
+        "KINGDEE_CF_ACCESS_CLIENT_ID": "<cloudflare-access-client-id>",
+        "KINGDEE_CF_ACCESS_CLIENT_SECRET": "<cloudflare-access-client-secret>"
+      },
+      "disabled": false
     }
   }
 }
 ```
+
+Native `type: http` direct mode is experimental. If batch calls show `failed fetch`, missing tools, or frequent reconnects, switch back to `mcp-remote`.
 
 ## 典型问题
 

@@ -53,10 +53,42 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="generate_token.py",
         description="Generate a KingdeeMCP Bearer token and update the hashed token mapping.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""Examples:
+  # Read-only token for the 14 core read tools
+  cd /public/KingdeeMCP
+  /public/KingdeeMCP/scripts/generate_token.sh --operator zhangsan --kingdee-username zhangsan --allow read
+
+  # Full read-only token for every read-only tool in the catalog
+  /public/KingdeeMCP/scripts/generate_token.sh --operator lisi --kingdee-username lisi --allow full-read
+
+  # Write-capable token. The write profile already includes read tools.
+  /public/KingdeeMCP/scripts/generate_token.sh --operator wangwu --kingdee-username wangwu --allow write
+
+  # Allow explicit tools only. Repeat --allow or use comma-separated values.
+  /public/KingdeeMCP/scripts/generate_token.sh --operator zhaoliu --kingdee-username zhaoliu --allow kingdee_smoke_test --allow kingdee_query_purchase_orders
+  /public/KingdeeMCP/scripts/generate_token.sh --operator zhaoliu --kingdee-username zhaoliu --allow kingdee_smoke_test,kingdee_query_purchase_orders
+
+  # Complete catalog token for trusted admins only
+  /public/KingdeeMCP/scripts/generate_token.sh --operator admin --kingdee-username admin --allow all
+
+  # Print machine-readable JSON output
+  /public/KingdeeMCP/scripts/generate_token.sh --operator lisi --kingdee-username lisi --allow read --json
+""",
     )
     parser.add_argument("--operator", required=True, help="MCP audit identity")
     parser.add_argument("--kingdee-username", required=True, help="Kingdee username used by LoginByAppSecret")
-    parser.add_argument("--allow", action="append", default=[], help="allowed profile or explicit tool name; default: read")
+    parser.add_argument(
+        "--allow",
+        action="append",
+        default=[],
+        help=(
+            "allowed profile or explicit tool name; profiles: "
+            "read/core=14 core read tools, full-read/read-all=all read-only tools, "
+            "write=read and write tools, ops=ops placeholders, all/high/*=complete catalog; "
+            "save and audit are accepted as write aliases; can repeat or use comma list; default: read"
+        ),
+    )
     parser.add_argument("--config", help="path to tokens.json; default: MCP_TOKEN_CONFIG, .env, then repo secrets/tokens.json")
     parser.add_argument("--token", help="use a provided token instead of generating one; mainly for controlled rotation/tests")
     parser.add_argument("--bytes", type=int, default=DEFAULT_TOKEN_BYTES, help="random bytes for generated token, default 32")

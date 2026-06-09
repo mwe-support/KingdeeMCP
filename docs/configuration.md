@@ -37,6 +37,43 @@ Login responses are cached per mapped Kingdee user. The lightweight client sends
 | `MCP_AUTH_DISABLED` | no | `false` | Set `true` only for local unauthenticated tests. Never enable in shared production. |
 | `MCP_CORS_ALLOW_ORIGINS` | no | `*` | Comma-separated browser/WebView origins allowed by the lightweight gateway. Use `*` for broad client compatibility, or an explicit list such as `http://localhost:6274,https://your-client.example.com`. With Cloudflare Access, enable `options_preflight_bypass` and leave Access-level CORS unset so the origin controls CORS consistently. |
 
+## Client Connection Recommendation
+
+For WorkBuddy and other MCP clients behind Cloudflare Access, prefer an `npx mcp-remote` stdio proxy instead of native `type: http` client configuration. The server still runs `MCP_TRANSPORT=streamable-http`; only the client-side adapter changes.
+
+```json
+{
+  "mcpServers": {
+    "kingdee_mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote@latest",
+        "https://your-cloudflare-domain.example.com/mcp",
+        "--transport",
+        "http-only",
+        "--header",
+        "Authorization:${KINGDEE_MCP_AUTH_HEADER}",
+        "--header",
+        "CF-Access-Client-Id:${KINGDEE_CF_ACCESS_CLIENT_ID}",
+        "--header",
+        "CF-Access-Client-Secret:${KINGDEE_CF_ACCESS_CLIENT_SECRET}"
+      ],
+      "env": {
+        "KINGDEE_MCP_AUTH_HEADER": "Bearer <kingdee-mcp-token>",
+        "KINGDEE_CF_ACCESS_CLIENT_ID": "<cloudflare-access-client-id>",
+        "KINGDEE_CF_ACCESS_CLIENT_SECRET": "<cloudflare-access-client-secret>"
+      },
+      "disabled": false
+    }
+  }
+}
+```
+
+Keep the colon-adjacent header form such as `Authorization:${KINGDEE_MCP_AUTH_HEADER}` in `args`; the value in `env` may contain spaces. This avoids argument escaping issues in Windows MCP clients while still sending a valid `Authorization: Bearer ...` header.
+
+Native `type: http` direct connections are an experimental fallback only. Use them only when the client has stable Streamable HTTP support, correctly forwards Cloudflare Access headers, and does not disconnect during batch tool calls.
+
 ## Concurrency Variables
 
 | Variable | Required | Recommended value | Description |
@@ -66,16 +103,37 @@ Login responses are cached per mapped Kingdee user. The lightweight client sends
 
 - `operator` is the MCP caller identity for audit and troubleshooting.
 - `kingdee_username` is the real Kingdee user passed to `LoginByAppSecret`.
-- `allowed_tools` may contain `read` for the first lightweight production profile.
+- `allowed_tools` may contain profiles or explicit tool names. Common profiles are `read`, `full-read`, `write`, and `all`.
 - Plaintext Bearer tokens must not be written to this file or logs.
 - The lightweight gateway hot-reloads this file when it changes. Adding, disabling, or deleting a token does not require restarting `kingdee-mcp.service`.
 
 Generate a read-only token with the repository script:
 
 ```bash
-/public/KingdeeMCP/scripts/generate_token.sh \
-  --operator zhangsan \
-  --kingdee-username zhangsan
+/public/KingdeeMCP/scripts/generate_token.sh --operator zhangsan --kingdee-username zhangsan --allow read
+```
+
+Common `--allow` examples:
+
+```bash
+# Core read-only tools, recommended for normal production users
+/public/KingdeeMCP/scripts/generate_token.sh --operator zhangsan --kingdee-username zhangsan --allow read
+
+# All read-only tools
+/public/KingdeeMCP/scripts/generate_token.sh --operator lisi --kingdee-username lisi --allow full-read
+
+# Write-capable token. The write profile already includes read tools.
+/public/KingdeeMCP/scripts/generate_token.sh --operator wangwu --kingdee-username wangwu --allow write
+
+# Explicit tools only; repeat --allow or use comma-separated values
+/public/KingdeeMCP/scripts/generate_token.sh --operator zhaoliu --kingdee-username zhaoliu --allow kingdee_smoke_test --allow kingdee_query_purchase_orders
+/public/KingdeeMCP/scripts/generate_token.sh --operator zhaoliu --kingdee-username zhaoliu --allow kingdee_smoke_test,kingdee_query_purchase_orders
+
+# Complete catalog, trusted admins only
+/public/KingdeeMCP/scripts/generate_token.sh --operator admin --kingdee-username admin --allow all
+
+# Machine-readable JSON output
+/public/KingdeeMCP/scripts/generate_token.sh --operator lisi --kingdee-username lisi --allow read --json
 ```
 
 The script uses only Python standard library plus this repository's source tree. It does not require installing the `kingdee-mcp` package or activating `.venv`.
