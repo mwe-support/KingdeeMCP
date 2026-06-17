@@ -41,7 +41,7 @@ CORE_READ_TOOL_NAMES = frozenset(
 
 FORM_CATALOG: dict[str, dict[str, Any]] = {
     "PUR_PurchaseOrder": {"name": "采购订单", "alias": ["采购", "采购订单", "PO"], "desc": "供应商采购订单", "fields": "FID,FBillNo,FDate,FDocumentStatus,FSupplierId.FName,FPurchaseDeptId.FName,FTaxAmount,FAllAmount,FReceiveQty,FStockInQty"},
-    "SAL_SaleOrder": {"name": "销售订单", "alias": ["销售", "销售订单", "SO"], "desc": "客户销售订单", "fields": "FID,FBillNo,FDate,FDocumentStatus,FCustId.FName,FTotalAmount"},
+    "SAL_SaleOrder": {"name": "销售订单", "alias": ["销售", "销售订单", "SO"], "desc": "客户销售订单", "fields": "FID,FBillNo,FDate,FDocumentStatus,FCustId.FName,FAllAmount"},
     "STK_InStock": {"name": "采购入库单", "alias": ["入库", "采购入库"], "desc": "采购业务入库单据", "fields": "FID,FBillNo,FDate,FDocumentStatus,FStockOrgId.FName"},
     "SAL_OUTSTOCK": {"name": "销售出库单", "alias": ["出库", "销售出库"], "desc": "销售业务出库单据", "fields": "FID,FBillNo,FDate,FDocumentStatus,FStockOrgId.FName"},
     "STK_MisDelivery": {"name": "其他出库单", "alias": ["其他出库", "出库"], "desc": "非销售业务出库单据", "fields": "FID,FBillNo,FDate,FDocumentStatus,FStockOrgId.FName"},
@@ -96,7 +96,7 @@ def build_core_read_tools(client: KingdeeWebAPIClient) -> dict[str, ToolDefiniti
         return {"tip": "FReceiveQty=累计收料数量，FStockInQty=累计入库数量", "count": len(data), "has_more": len(data) == args["limit"], "data": data}
 
     async def sale_orders(args: dict[str, Any], context: OperatorContext) -> dict[str, Any]:
-        fields = args["field_keys"] if args["field_keys"] != DEFAULT_QUERY_FIELDS else "FID,FBillNo,FDate,FDocumentStatus,FCustId.FName,FTotalAmount"
+        fields = args["field_keys"] if args["field_keys"] != DEFAULT_QUERY_FIELDS else "FID,FBillNo,FDate,FDocumentStatus,FCustId.FName,FAllAmount"
         data = rows(await client.post("query", client.query_payload("SAL_SaleOrder", fields, args["filter_string"], args["order_string"], args["start_row"], args["limit"]), context))
         return {"count": len(data), "has_more": len(data) == args["limit"], "data": data}
 
@@ -308,7 +308,7 @@ MIGRATED_QUERY_SPECS = (
     MigratedQuerySpec("kingdee_query_asset_transfer", "Query asset transfer bills.", "FA_Transfer", "FID,FBillNo,FTransferDate,FDocumentStatus,FAssetId.FNumber,FAssetId.FName,FOldDeptId.FName,FNewDeptId.FName,FTransferReason"),
     MigratedQuerySpec("kingdee_query_asset_scrape", "Query asset disposal bills.", "FA_Scrape", "FID,FBillNo,FScrapeDate,FDocumentStatus,FAssetId.FNumber,FAssetId.FName,FOriginalAmount,FTotalDepreciate,FNetAmount,FScrapeType,FHandleMethod"),
     MigratedQuerySpec("kingdee_query_purchase_requisitions", "Query purchase requisitions.", "PUR_Requisition", "FID,FBillNo,FDate,FDocumentStatus,FApplicantId.FName,FRequestDeptId.FName"),
-    MigratedQuerySpec("kingdee_query_sale_quotations", "Query sales quotations.", "SAL_Quotation", "FID,FBillNo,FDate,FDocumentStatus,FCustId.FName,FTotalAmount"),
+    MigratedQuerySpec("kingdee_query_sale_quotations", "Query sales quotations.", "SAL_Quotation", "FID,FBillNo,FDate,FDocumentStatus,FCustId.FName,FAllAmount"),
     MigratedQuerySpec("kingdee_query_quality_inspections", "Query quality inspection bills.", "QIS_InspectBill", "FID,FBillNo,FDate,FDocumentStatus,FSupplierId.FName,FMaterialId.FName,FPassQty,FFailQty"),
     MigratedQuerySpec("kingdee_query_stock_transfer_apply", "Query stock transfer applications.", "STK_TransferApply", "FID,FBillNo,FDate,FDocumentStatus,FSendStockId.FName,FReceiveStockId.FName"),
     MigratedQuerySpec("kingdee_query_audit_log", "Query audit logs.", "BOS_AuditLog", "FID,FCREATEDATE,FCREATORID,FOBJECTID,FFORMID,FOBJECTNO,FAUDITRESULT,FMEMO", "FCREATEDATE DESC", default_limit=50, max_limit=2000),

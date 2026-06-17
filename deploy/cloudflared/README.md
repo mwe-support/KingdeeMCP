@@ -89,3 +89,6 @@ image: docker.m.daocloud.io/cloudflare/cloudflared:2026.5.2
 
 This is a registry mirror for the official `cloudflare/cloudflared` image and avoids Docker Hub timeout on the current server.
 If Docker Hub is stable in another environment, the image field can be changed to `cloudflare/cloudflared:2026.5.2`.
+## Protocol
+
+This deployment pins `cloudflared` to `--protocol http2` for better stability when clients connect through unstable cross-border networks. HTTP/2 uses TCP/TLS and is preferred here over default QUIC/UDP for WorkBuddy batch MCP calls.

@@ -86,7 +86,7 @@ MCP_AUTH_DISABLED=false
 
 MCP_MAX_CONCURRENT_TOOLS=8
 MCP_MAX_CONCURRENT_KINGDEE_REQUESTS=4
-MCP_TOOL_QUEUE_TIMEOUT_SECONDS=3
+MCP_TOOL_QUEUE_TIMEOUT_SECONDS=15
 MCP_TOOL_CALL_TIMEOUT_SECONDS=120
 MCP_HTTP_REQUEST_QUEUE_SIZE=128
 ```
@@ -112,7 +112,7 @@ MCP_HTTP_REQUEST_QUEUE_SIZE=128
 | `MCP_AUTH_DISABLED` | `false` | 是 | 只允许本地测试设为 `true`，生产必须为 `false`。 |
 | `MCP_MAX_CONCURRENT_TOOLS` | `8` | 否 | MCP 工具处理器最大并发数。 |
 | `MCP_MAX_CONCURRENT_KINGDEE_REQUESTS` | `4` | 否 | 对金蝶 WebAPI 的最大并发请求数。 |
-| `MCP_TOOL_QUEUE_TIMEOUT_SECONDS` | `3` | 否 | 等待工具并发槽位的时间，超时返回 `server_busy`。 |
+| `MCP_TOOL_QUEUE_TIMEOUT_SECONDS` | `15` | 否 | 等待工具并发槽位的时间，超时返回 `server_busy`。 |
 | `MCP_TOOL_CALL_TIMEOUT_SECONDS` | `120` | 否 | 单次工具调用最大执行时间。 |
 | `MCP_HTTP_REQUEST_QUEUE_SIZE` | `128` | 否 | 本地 HTTP server TCP backlog。 |
 

@@ -8,7 +8,7 @@ The lightweight gateway should absorb bursts and avoid forwarding them directly 
 ```text
 MCP_MAX_CONCURRENT_TOOLS=8
 MCP_MAX_CONCURRENT_KINGDEE_REQUESTS=4
-MCP_TOOL_QUEUE_TIMEOUT_SECONDS=3
+MCP_TOOL_QUEUE_TIMEOUT_SECONDS=15
 MCP_TOOL_CALL_TIMEOUT_SECONDS=120
 MCP_HTTP_REQUEST_QUEUE_SIZE=128
 ```
@@ -46,7 +46,7 @@ For safer operation on a smaller host:
 ```text
 MCP_MAX_CONCURRENT_TOOLS=4
 MCP_MAX_CONCURRENT_KINGDEE_REQUESTS=2
-MCP_TOOL_QUEUE_TIMEOUT_SECONDS=2
+MCP_TOOL_QUEUE_TIMEOUT_SECONDS=15
 ```
 
 For a larger host after successful load testing:

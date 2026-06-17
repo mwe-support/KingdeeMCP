@@ -80,7 +80,7 @@ Native `type: http` direct connections are an experimental fallback only. Use th
 | --- | --- | --- | --- |
 | `MCP_MAX_CONCURRENT_TOOLS` | no | `8` | Maximum concurrent tool handlers in this process. Extra calls wait briefly. |
 | `MCP_MAX_CONCURRENT_KINGDEE_REQUESTS` | no | `4` | Maximum concurrent outbound Kingdee WebAPI requests. Protects Kingdee and this host. |
-| `MCP_TOOL_QUEUE_TIMEOUT_SECONDS` | no | `3` | Wait time for a tool slot before returning `server_busy`. |
+| `MCP_TOOL_QUEUE_TIMEOUT_SECONDS` | no | `15` | Wait time for a tool slot before returning `server_busy`. Use 15 seconds for WorkBuddy batch calls behind Cloudflare Access. |
 | `MCP_TOOL_CALL_TIMEOUT_SECONDS` | no | `120` | Wall-clock timeout for one tool call. |
 | `MCP_HTTP_REQUEST_QUEUE_SIZE` | no | `128` | TCP accept backlog for the local `ThreadingHTTPServer`. |
 
