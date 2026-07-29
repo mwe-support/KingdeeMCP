@@ -175,7 +175,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "allowed profile or explicit tool name; profiles: "
             "read/core=14 core read tools, full-read/read-all=all read-only tools including experiments, "
-            "write=stable read and write tools, ops=ops placeholders, "
+            "write=all read-only tools including experiments plus write tools, ops=ops placeholders, "
             "all/high/*=complete stable catalog excluding experiments; "
             "save and audit are accepted as write aliases; "
             "one profile may be combined with explicit tool names; can repeat or use comma list"

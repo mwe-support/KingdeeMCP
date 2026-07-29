@@ -328,8 +328,8 @@ Current policy:
   `CORE_READ_TOOL_NAMES`.
 - Bearer tokens with `allowed_tools: ["full-read"]` or `["read-all"]` see all
   read-only tools, including experimental read tools.
-- Bearer tokens with `allowed_tools: ["write"]` see stable read and write tools,
-  excluding experimental read tools.
+- Bearer tokens with `allowed_tools: ["write"]` see all read tools, including
+  `kingdee_query_subledger`, plus write tools.
 - Bearer tokens with `high`, `all`, or `*` see the stable full catalog,
   excluding experimental tools, and should be reserved for trusted
   admin/development use.
@@ -387,6 +387,7 @@ Design rules for this refactor:
   non-simple report by `GetSysReportData`.
 - Composite report tools remain outside `CORE_READ_TOOL_NAMES` until their
   accounting semantics, pagination, and tenant compatibility are broadly
-  validated. They require `full-read` or explicit tool authorization.
+  validated. `kingdee_query_subledger` is available to `full-read`, `write`,
+  or explicit tool authorization.
 - Write, audit, unaudit, delete, and push tools are registered under the write profile. SQL probing and in-process usage logs are not production features.
 - Local stdio should use the same lightweight dispatcher as HTTP. It may use `KINGDEE_USERNAME` as the local user when no HTTP Bearer context exists.

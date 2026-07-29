@@ -38,7 +38,7 @@ HTTP production maps callers from `MCP_TOKEN_CONFIG`; do not use one global `KIN
 
 ## Experimental Read Tool
 
-`kingdee_query_subledger` is registered for `full-read` and explicit tool authorization. It is excluded from `read`, `write`, `all`, `high`, and `*` unless the token also names the tool explicitly.
+`kingdee_query_subledger` is registered for `full-read`, `read-all`, `write`, and explicit tool authorization. It is excluded from `read`, `core`, `all`, `high`, and `*` unless the token also names the tool explicitly.
 
 Required parameters are `account_book_number`, `start_year`, `end_year`, and `start_account_number`. Important optional parameters are `start_period`, `end_period`, `end_account_number`, `currency_number`, `include_unposted_vouchers`, `exclude_adjustment_vouchers`, `balance_start_row`, `balance_limit`, `start_row`, and `limit`. The composite query supports ordinary periods 1-12.
 

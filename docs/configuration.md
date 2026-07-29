@@ -106,10 +106,10 @@ Native `type: http` direct connections are an experimental fallback only. Use th
 - `allowed_tools` may contain one profile plus optional explicit tool names.
 - `read`/`core` exposes the 14 core read-only tools.
 - `full-read`/`read-all` exposes all read-only tools, including experimental tools.
-- `write` exposes stable read and write tools; it does not implicitly add experimental tools.
+- `write` exposes all read-only tools, including `kingdee_query_subledger`, plus write tools.
 - `all`/`high`/`*` exposes the stable complete catalog; it does not implicitly add experimental tools.
 - `ops` exposes only lightweight operational placeholders.
-- Experimental tools such as `kingdee_query_subledger` require `full-read` or the explicit tool name.
+- `kingdee_query_subledger` is available through `full-read`, `read-all`, `write`, or the explicit tool name.
 - Plaintext Bearer tokens must not be written to this file or logs.
 - The lightweight gateway hot-reloads this file when it changes. Adding, disabling, or deleting a token does not require restarting `kingdee-mcp.service`.
 

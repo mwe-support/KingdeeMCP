@@ -39,10 +39,10 @@ def test_full_read_scope_exposes_migrated_read_tools_without_write_or_ops():
 def test_write_scope_exposes_read_and_write_tools_without_ops():
     names = _visible({"write"})
 
-    assert names == (ALL_READ_TOOL_NAMES - EXPERIMENTAL_READ_TOOL_NAMES) | MIGRATED_WRITE_TOOL_NAMES
+    assert names == ALL_READ_TOOL_NAMES | MIGRATED_WRITE_TOOL_NAMES
     assert "kingdee_save_bill" in names
     assert "kingdee_delete_bills" in names
-    assert "kingdee_query_subledger" not in names
+    assert "kingdee_query_subledger" in names
     assert "kingdee_usage_stats" not in names
 
 
@@ -62,8 +62,9 @@ def test_broad_scopes_expose_stable_catalog_without_experimental_tools():
         assert "kingdee_query_subledger" not in _visible({scope})
 
 
-def test_experimental_tool_requires_full_read_or_explicit_authorization():
+def test_experimental_tool_accepts_full_read_write_or_explicit_authorization():
     name = "kingdee_query_subledger"
 
     assert tool_allowed(name, frozenset({"full-read"}))
+    assert tool_allowed(name, frozenset({"write"}))
     assert tool_allowed(name, frozenset({name}))

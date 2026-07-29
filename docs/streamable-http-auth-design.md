@@ -60,7 +60,7 @@ Do not use stdio fallback for shared remote deployment.
 }
 ```
 
-`read`/`core` exposes only the 14 core read-only tools. `full-read`/`read-all` includes experimental read tools. `write`, `all`, `high`, and `*` expose stable catalogs and do not implicitly include experiments. An experimental tool can also be granted by its explicit tool name.
+`read`/`core` exposes only the 14 core read-only tools. `full-read`/`read-all` includes experimental read tools. `write` includes all read-only tools, including `kingdee_query_subledger`, plus write tools. `all`, `high`, and `*` expose stable catalogs and do not implicitly include experiments. An experimental tool can also be granted by its explicit tool name.
 
 ## Current Non-Goals
 

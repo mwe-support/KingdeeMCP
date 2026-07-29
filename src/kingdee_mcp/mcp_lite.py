@@ -210,7 +210,6 @@ def tool_allowed(name: str, allowed_tools: frozenset[str]) -> bool:
         return False
     if name in allowed_tools:
         return True
-    stable_read_tools = ALL_READ_TOOL_NAMES - EXPERIMENTAL_READ_TOOL_NAMES
     if allowed_tools.intersection({"*", "all", "high"}):
         return name in ALL_LIGHTWEIGHT_TOOL_NAMES - EXPERIMENTAL_READ_TOOL_NAMES
     if allowed_tools.intersection({"read", "core"}):
@@ -218,7 +217,7 @@ def tool_allowed(name: str, allowed_tools: frozenset[str]) -> bool:
     if allowed_tools.intersection({"full-read", "read-all"}):
         return name in ALL_READ_TOOL_NAMES
     if "write" in allowed_tools:
-        return name in stable_read_tools or name in MIGRATED_WRITE_TOOL_NAMES
+        return name in ALL_READ_TOOL_NAMES or name in MIGRATED_WRITE_TOOL_NAMES
     if "ops" in allowed_tools:
         return name in MIGRATED_OPS_TOOL_NAMES
     return False

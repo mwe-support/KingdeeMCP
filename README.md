@@ -10,7 +10,7 @@ KingdeeMCP 当前生产实现是一个轻量 MCP Gateway，用于让 MCP 客户�
 - HTTP 响应是 `application/json` + `Content-Length`，不返回 `text/event-stream`，不使用 `mcp-session-id`。
 - Bearer Token 映射到 `operator`、`kingdee_username`、`allowed_tools`。
 - 金蝶 WebAPI 仍使用共享 `AppID/AppSecret` + 指定金蝶用户 `LoginByAppSecret` 登录。
-- 工具已统一迁入 lightweight registry。默认 `read`/`core` token 只暴露 14 个核心只读工具；`full-read`/`read-all` 暴露全部只读工具（包含实验性工具）；`write` 暴露稳定只读和写入工具；`ops` 只暴露轻量运维占位工具；`all`/`high`/`*` 暴露稳定完整目录，但不自动包含实验性工具。
+- 工具已统一迁入 lightweight registry。默认 `read`/`core` token 只暴露 14 个核心只读工具；`full-read`/`read-all` 暴露全部只读工具（包含实验性工具）；`write` 暴露全部只读工具（包含 `kingdee_query_subledger`）和写入工具；`ops` 只暴露轻量运维占位工具；`all`/`high`/`*` 暴露稳定完整目录，但不自动包含实验性工具。
 
 ## 架构
 
@@ -359,7 +359,7 @@ kingdee_query_subledger(
 )
 ```
 
-该组合查询已在真实账套验证余额与页面一致，但仍保留为实验工具：它返回余额和凭证基础数据，不模拟页面的对方科目匹配、核算维度展开、期间小计或报表分页。使用 `full-read` 或显式授权 `kingdee_query_subledger`；`read`、`write`、`all`、`high`、`*` 均不会隐式授权它。
+该组合查询已在真实账套验证余额与页面一致，但仍保留为实验工具：它返回余额和凭证基础数据，不模拟页面的对方科目匹配、核算维度展开、期间小计或报表分页。`full-read`、`read-all` 和 `write` 会直接授权该工具，也可显式授权 `kingdee_query_subledger`；`read`、`core`、`all`、`high`、`*` 不会隐式授权它。
 
 Disallowed or unknown tool calls return unknown_tool/disallowed_tool and must not call Kingdee WebAPI.
 
