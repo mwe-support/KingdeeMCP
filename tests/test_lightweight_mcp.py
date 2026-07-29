@@ -8,7 +8,7 @@ from pathlib import Path
 
 from kingdee_mcp.auth import hash_bearer_token
 from kingdee_mcp.config import ServiceConfig, TransportConfig
-from kingdee_mcp.light_tools import CORE_READ_TOOL_NAMES
+from kingdee_mcp.light_tools import CORE_READ_TOOL_NAMES, map_query_rows
 from kingdee_mcp.mcp_lite import (
     KingdeeLiteApplication,
     _read_stdio_message,
@@ -43,6 +43,14 @@ class FakeKingdeeClient:
 
     async def post(self, ep_key, payload, context):
         self.posts.append((ep_key, payload, context.kingdee_username))
+        if payload.get("FormId") == "GL_BALANCE":
+            return [["001", 2026, 6, "1001", "库存现金", "PRE001", "人民币", 11337.0, 0.0, 0.0, 87100.0, 89054.0, 11337.0, 0]]
+        if payload.get("FormId") == "GL_VOUCHER":
+            return [
+                ["V001", "2026-06-09T00:00:00", "付", "97", "测试付款", "1001", "库存现金", "PRE001", "人民币", 0.0, 300.0, "-1", "C", "过账员", 1001],
+                ["V002", "2026-06-12T00:00:00", "付", "98", "测试收款", "1001", "库存现金", "PRE001", "人民币", 500.0, 0.0, "1", "C", "过账员", 1002],
+                ["V003", "2026-06-13T00:00:00", "付", "99", "测试收款", "1001", "库存现金", "PRE001", "人民币", 100.0, 0.0, "1", "C", "过账员", 1003],
+            ]
         return [["row-1"]]
 
     async def raw(self, ep_key, form_id, data_obj, context):
@@ -193,6 +201,325 @@ def test_valid_token_maps_to_kingdee_user_for_tool_call(tmp_path: Path):
         assert fake.sessions == ["kingdee-alice"]
     finally:
         app.close()
+
+
+def test_subledger_combines_balance_and_voucher_webapi_data(tmp_path: Path):
+    app, fake, token = make_app(
+        tmp_path,
+        allowed_tools=["kingdee_query_subledger"],
+    )
+    try:
+        status, body = process_http_request(
+            app,
+            method="POST",
+            path="/mcp",
+            headers={"Authorization": f"Bearer {token}"},
+            body=json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 8,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "kingdee_query_subledger",
+                        "arguments": {
+                            "start_year": 2026,
+                            "start_period": 6,
+                            "end_year": 2026,
+                            "end_period": 6,
+                            "account_book_number": "001",
+                            "start_account_number": "1001",
+                            "end_account_number": "1001",
+                            "currency_number": "PRE001",
+                            "exclude_adjustment_vouchers": True,
+                            "limit": 2,
+                        },
+                    },
+                }
+            ).encode("utf-8"),
+        )
+
+        assert status == 200
+        result = body["result"]["structuredContent"]
+        assert result["report_form_id"] == "GL_RPT_SubLedger"
+        assert result["report_name"] == "明细分类账"
+        assert result["data_sources"] == ["GL_BALANCE", "GL_VOUCHER"]
+        assert result["count"] == 2
+        assert result["has_more"] is True
+        assert result["opening_balances"] == [
+            {
+                "account_book_number": "001",
+                "year": 2026,
+                "period": 6,
+                "account_number": "1001",
+                "account_name": "库存现金",
+                "currency_number": "PRE001",
+                "currency_name": "人民币",
+                "begin_balance": 11337.0,
+                "debit": 0.0,
+                "credit": 0.0,
+                "ytd_debit": 87100.0,
+                "ytd_credit": 89054.0,
+                "end_balance": 11337.0,
+                "adjust_period": 0,
+            }
+        ]
+        assert result["opening_balances_has_more"] is False
+        assert result["closing_balances"] == result["opening_balances"]
+        assert result["closing_balances_has_more"] is False
+        assert result["entries"][0]["voucher_number"] == "V001"
+        assert result["entries"][0]["credit"] == 300.0
+
+        assert len(fake.posts) == 2
+        balance_call = fake.posts[0]
+        voucher_call = fake.posts[1]
+        assert balance_call[0] == "query"
+        assert balance_call[1]["FormId"] == "GL_BALANCE"
+        assert "FACCOUNTBOOKID.FNumber = '001'" in balance_call[1]["FilterString"]
+        assert "FAccountID.FNumber >= '1001'" in balance_call[1]["FilterString"]
+        assert "FCurrencyID.FNumber = 'PRE001'" in balance_call[1]["FilterString"]
+        assert "FAdjustPeriod = 0" in balance_call[1]["FilterString"]
+        assert balance_call[2] == "kingdee-alice"
+        assert voucher_call[0] == "query"
+        assert voucher_call[1]["FormId"] == "GL_VOUCHER"
+        assert "FPOSTERID > 0" in voucher_call[1]["FilterString"]
+        assert "FInvalid = '0'" in voucher_call[1]["FilterString"]
+        assert "FISADJUSTVOUCHER = 0" in voucher_call[1]["FilterString"]
+        assert voucher_call[1]["StartRow"] == 0
+        assert voucher_call[1]["Limit"] == 3
+        assert voucher_call[1]["OrderString"].endswith("FEntity_FEntryID ASC")
+        assert voucher_call[2] == "kingdee-alice"
+        assert fake.raw_calls == []
+    finally:
+        app.close()
+
+
+def test_subledger_requires_account_book_number_before_kingdee_call(tmp_path: Path):
+    app, fake, token = make_app(
+        tmp_path,
+        allowed_tools=["kingdee_query_subledger"],
+    )
+    try:
+        status, body = process_http_request(
+            app,
+            method="POST",
+            path="/mcp",
+            headers={"Authorization": f"Bearer {token}"},
+            body=json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 9,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "kingdee_query_subledger",
+                        "arguments": {
+                            "start_year": 2026,
+                            "end_year": 2026,
+                        },
+                    },
+                }
+            ).encode("utf-8"),
+        )
+
+        assert status == 200
+        result = body["result"]
+        assert result["isError"] is True
+        assert result["structuredContent"]["error"]["type"] == "invalid_arguments"
+        assert "account_book_number" in result["structuredContent"]["error"]["message"]
+        assert fake.raw_calls == []
+    finally:
+        app.close()
+
+
+def test_subledger_escapes_filter_values_and_can_include_unposted(tmp_path: Path):
+    app, fake, token = make_app(
+        tmp_path,
+        allowed_tools=["kingdee_query_subledger"],
+    )
+    try:
+        status, body = process_http_request(
+            app,
+            method="POST",
+            path="/mcp",
+            headers={"Authorization": f"Bearer {token}"},
+            body=json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 10,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "kingdee_query_subledger",
+                        "arguments": {
+                            "start_year": 2026,
+                            "end_year": 2026,
+                            "account_book_number": "00'1",
+                            "start_account_number": "10'01",
+                            "exclude_adjustment_vouchers": False,
+                            "include_unposted_vouchers": True,
+                        },
+                    },
+                }
+            ).encode("utf-8"),
+        )
+
+        assert status == 200
+        result = body["result"]
+        assert result["isError"] is False
+        filters = [call[1]["FilterString"] for call in fake.posts]
+        assert all("00''1" in item for item in filters)
+        assert all("10''01" in item for item in filters)
+        assert "FAdjustPeriod = 0" not in fake.posts[0][1]["FilterString"]
+        voucher_filter = fake.posts[-1][1]["FilterString"]
+        assert "FISADJUSTVOUCHER = 0" not in voucher_filter
+        assert "FPOSTERID > 0" not in voucher_filter
+        assert "FInvalid = '0'" in voucher_filter
+        assert fake.raw_calls == []
+    finally:
+        app.close()
+
+
+def test_subledger_queries_both_boundary_balances_for_multi_period(tmp_path: Path):
+    app, fake, token = make_app(
+        tmp_path,
+        allowed_tools=["kingdee_query_subledger"],
+    )
+    try:
+        status, body = process_http_request(
+            app,
+            method="POST",
+            path="/mcp",
+            headers={"Authorization": f"Bearer {token}"},
+            body=json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 12,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "kingdee_query_subledger",
+                        "arguments": {
+                            "start_year": 2026,
+                            "start_period": 5,
+                            "end_year": 2026,
+                            "end_period": 6,
+                            "account_book_number": "001",
+                            "start_account_number": "1001",
+                        },
+                    },
+                }
+            ).encode("utf-8"),
+        )
+
+        assert status == 200
+        assert body["result"]["isError"] is False
+        assert [call[1]["FormId"] for call in fake.posts] == ["GL_BALANCE", "GL_BALANCE", "GL_VOUCHER"]
+        assert "FPeriod = 5" in fake.posts[0][1]["FilterString"]
+        assert "FPeriod = 6" in fake.posts[1][1]["FilterString"]
+    finally:
+        app.close()
+
+
+def test_subledger_caps_limit_at_100(tmp_path: Path):
+    app, fake, token = make_app(
+        tmp_path,
+        allowed_tools=["kingdee_query_subledger"],
+    )
+    try:
+        status, body = process_http_request(
+            app,
+            method="POST",
+            path="/mcp",
+            headers={"Authorization": f"Bearer {token}"},
+            body=json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 11,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "kingdee_query_subledger",
+                        "arguments": {
+                            "start_year": 2026,
+                            "end_year": 2026,
+                            "account_book_number": "001",
+                            "start_account_number": "1001",
+                            "limit": 101,
+                        },
+                    },
+                }
+            ).encode("utf-8"),
+        )
+
+        assert status == 200
+        result = body["result"]
+        assert result["isError"] is True
+        assert result["structuredContent"]["error"]["type"] == "invalid_arguments"
+        assert "limit must be <= 100" in result["structuredContent"]["error"]["message"]
+        assert fake.raw_calls == []
+    finally:
+        app.close()
+
+
+def test_subledger_balance_pagination_uses_limit_plus_one(tmp_path: Path):
+    app, fake, token = make_app(
+        tmp_path,
+        allowed_tools=["kingdee_query_subledger"],
+    )
+    try:
+        status, body = process_http_request(
+            app,
+            method="POST",
+            path="/mcp",
+            headers={"Authorization": f"Bearer {token}"},
+            body=json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 13,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "kingdee_query_subledger",
+                        "arguments": {
+                            "start_year": 2026,
+                            "end_year": 2026,
+                            "account_book_number": "001",
+                            "start_account_number": "1001",
+                            "balance_start_row": 25,
+                            "balance_limit": 40,
+                        },
+                    },
+                }
+            ).encode("utf-8"),
+        )
+
+        assert status == 200
+        assert body["result"]["isError"] is False
+        assert fake.posts[0][1]["StartRow"] == 25
+        assert fake.posts[0][1]["Limit"] == 41
+        result = body["result"]["structuredContent"]
+        assert result["balance_start_row"] == 25
+        assert result["balance_limit"] == 40
+    finally:
+        app.close()
+
+
+def test_map_query_rows_surfaces_execute_bill_query_business_error():
+    try:
+        map_query_rows(
+            [
+                [
+                    {
+                        "Result": {
+                            "ResponseStatus": {
+                                "IsSuccess": False,
+                                "Errors": [{"Message": "字段权限不足"}],
+                            }
+                        }
+                    }
+                ]
+            ],
+            ("field",),
+        )
+    except RuntimeError as exc:
+        assert "字段权限不足" in str(exc)
+    else:
+        raise AssertionError("ExecuteBillQuery business errors must be surfaced")
 
 
 def test_invalid_or_disabled_token_rejected_before_tool_logic(tmp_path: Path):

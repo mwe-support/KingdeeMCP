@@ -60,11 +60,11 @@ Do not use stdio fallback for shared remote deployment.
 }
 ```
 
-`read` currently exposes only the 14 core read-only tools.
+`read`/`core` exposes only the 14 core read-only tools. `full-read`/`read-all` includes experimental read tools. `write`, `all`, `high`, and `*` expose stable catalogs and do not implicitly include experiments. An experimental tool can also be granted by its explicit tool name.
 
-## Non-Goals In First Version
+## Current Non-Goals
 
-- Write/audit/delete/push tools.
 - SQL Server probing.
 - OAuth discovery metadata.
 - Usage-log report tools.
+- Calling native complex reports through undocumented browser endpoints. `kingdee_query_subledger` instead composes `GL_BALANCE` and `GL_VOUCHER` through standard WebAPI queries.

@@ -39,16 +39,23 @@ def test_build_token_entry_rejects_conflicting_profiles():
     else:
         raise AssertionError("conflicting read/write profiles should fail")
 
+    entry = build_token_entry(
+        operator="zhangsan",
+        kingdee_username="KD_ZHANGSAN",
+        allowed_tools=["all,kingdee_query_subledger"],
+    )
+    assert entry["allowed_tools"] == ["all", "kingdee_query_subledger"]
+
     try:
         build_token_entry(
             operator="zhangsan",
             kingdee_username="KD_ZHANGSAN",
-            allowed_tools=["all,kingdee_query_bills"],
+            allowed_tools=["all,write"],
         )
     except ValueError as exc:
         assert "all" in str(exc)
     else:
-        raise AssertionError("all plus explicit tool should fail")
+        raise AssertionError("all plus another profile should fail")
 
 
 def test_token_cli_create_updates_config_without_plaintext_token(tmp_path, capsys):

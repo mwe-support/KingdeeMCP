@@ -13,7 +13,7 @@
 
 ## 当前生产能力
 
-当前 lightweight 入口注册 14 个只读工具：
+当前 lightweight 入口默认注册 14 个核心只读工具：
 
 - `kingdee_smoke_test`
 - `kingdee_query_bills`
@@ -158,8 +158,9 @@ Native `type: http` direct mode is experimental. If batch calls show `failed fet
 
 ## 项目地址
 
-- GitHub: https://github.com/WaHaiLong/KingdeeMCP
-- PyPI: https://pypi.org/project/kingdee-mcp/
+- 定制仓库: https://github.com/mwe-support/KingdeeMCP
+- 上游项目: https://github.com/WaHaiLong/KingdeeMCP
+- 安装方式: 从定制仓库源码安装，避免安装上游 PyPI 版本
 - MCP 协议: https://modelcontextprotocol.io/
 
 关键词：金蝶 MCP、金蝶云星空 AI、MCP Server、金蝶 ERP 查询、Cloudflare Access、Bearer Token、轻量 MCP 网关

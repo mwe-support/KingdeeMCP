@@ -46,20 +46,10 @@ def parse_allowed_tools(values: Sequence[str]) -> list[str]:
 
 
 def validate_allowed_tools(tools: Sequence[str]) -> None:
-    if "*" in tools and len(tools) > 1:
-        raise ValueError("'*' grants the full catalog and cannot be combined with other allow values")
-    if "all" in tools and len(tools) > 1:
-        raise ValueError("'all' grants the full catalog and cannot be combined with other allow values")
-    if "high" in tools and any(item in PROFILE_SCOPES.difference({"high"}) for item in tools):
-        raise ValueError("'high' already grants the full catalog; do not combine it with other profiles")
-    if "ops" in tools and len(tools) > 1:
-        raise ValueError("'ops' is an operational profile and cannot be combined with other profiles")
-    if any(item in {"full-read", "read-all"} for item in tools) and any(item in {"read", "core", "write"} for item in tools):
-        raise ValueError("'full-read/read-all' overlaps read/write; use one profile plus optional explicit tool names")
-    if "read" in tools and "write" in tools:
-        raise ValueError("'write' already includes read tools; use write only")
-    if "core" in tools and any(item in {"read", "write"} for item in tools):
-        raise ValueError("'core' overlaps read/write; use one profile plus optional explicit tool names")
+    profiles = set(tools).intersection(PROFILE_SCOPES)
+    if len(profiles) > 1:
+        profile_list = ", ".join(sorted(profiles))
+        raise ValueError(f"conflicting permission profiles: {profile_list}; use one profile plus optional explicit tool names")
 
 
 def build_token_entry(
@@ -184,10 +174,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help=(
             "allowed profile or explicit tool name; profiles: "
-            "read/core=14 core read tools, full-read/read-all=all read-only tools, "
-            "write=read and write tools, ops=ops placeholders, all/high/*=complete catalog; "
+            "read/core=14 core read tools, full-read/read-all=all read-only tools including experiments, "
+            "write=stable read and write tools, ops=ops placeholders, "
+            "all/high/*=complete stable catalog excluding experiments; "
             "save and audit are accepted as write aliases; "
-            "can repeat or use comma list"
+            "one profile may be combined with explicit tool names; can repeat or use comma list"
         ),
     )
     create.add_argument("--config", help="path to tokens.json to update")

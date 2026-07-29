@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import threading
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -19,6 +20,7 @@ from .light_tools import (
     ALL_LIGHTWEIGHT_TOOL_NAMES,
     ALL_READ_TOOL_NAMES,
     CORE_READ_TOOL_NAMES,
+    EXPERIMENTAL_READ_TOOL_NAMES,
     MIGRATED_OPS_TOOL_NAMES,
     MIGRATED_WRITE_TOOL_NAMES,
     ToolDefinition,
@@ -47,7 +49,11 @@ class AsyncLoopRunner:
 
     def run(self, coro, *, timeout: float | None = None) -> Any:
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
-        return future.result(timeout=timeout)
+        try:
+            return future.result(timeout=timeout)
+        except FutureTimeoutError:
+            future.cancel()
+            raise
 
     def close(self) -> None:
         self._loop.call_soon_threadsafe(self._loop.stop)
@@ -204,14 +210,15 @@ def tool_allowed(name: str, allowed_tools: frozenset[str]) -> bool:
         return False
     if name in allowed_tools:
         return True
+    stable_read_tools = ALL_READ_TOOL_NAMES - EXPERIMENTAL_READ_TOOL_NAMES
     if allowed_tools.intersection({"*", "all", "high"}):
-        return name in ALL_LIGHTWEIGHT_TOOL_NAMES
+        return name in ALL_LIGHTWEIGHT_TOOL_NAMES - EXPERIMENTAL_READ_TOOL_NAMES
     if allowed_tools.intersection({"read", "core"}):
         return name in CORE_READ_TOOL_NAMES
     if allowed_tools.intersection({"full-read", "read-all"}):
         return name in ALL_READ_TOOL_NAMES
     if "write" in allowed_tools:
-        return name in ALL_READ_TOOL_NAMES or name in MIGRATED_WRITE_TOOL_NAMES
+        return name in stable_read_tools or name in MIGRATED_WRITE_TOOL_NAMES
     if "ops" in allowed_tools:
         return name in MIGRATED_OPS_TOOL_NAMES
     return False

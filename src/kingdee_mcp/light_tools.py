@@ -169,6 +169,102 @@ def build_core_read_tools(client: KingdeeWebAPIClient) -> dict[str, ToolDefiniti
         status = bill_data.get("FDocumentStatus", "") if isinstance(bill_data, dict) else ""
         return {"form_id": args["form_id"], "bill_id": args["bill_id"], "document_status": status, "status_name": STATUS_MAP.get(status, "未知"), "bill_no": bill_data.get("FBillNo", "") if isinstance(bill_data, dict) else "", "bill_data": bill_data}
 
+    async def subledger(args: dict[str, Any], context: OperatorContext) -> dict[str, Any]:
+        start_period = (args["start_year"], args["start_period"])
+        end_period = (args["end_year"], args["end_period"])
+        if start_period > end_period:
+            raise ValueError("start_year/start_period must not be later than end_year/end_period")
+
+        account_book_number = str(args["account_book_number"]).strip()
+        if not account_book_number:
+            raise ValueError("account_book_number must not be empty")
+        start_account_number = str(args["start_account_number"]).strip()
+        if not start_account_number:
+            raise ValueError("start_account_number must not be empty")
+        end_account_number = str(args["end_account_number"]).strip() or start_account_number
+        currency_number = str(args["currency_number"]).strip()
+
+        balance_filters = [
+            f"FACCOUNTBOOKID.FNumber = {filter_literal(account_book_number)}",
+            f"FAccountID.FNumber >= {filter_literal(start_account_number)}",
+            f"FAccountID.FNumber <= {filter_literal(end_account_number)}",
+        ]
+        voucher_filters = [
+            f"FAccountBookID.FNumber = {filter_literal(account_book_number)}",
+            f"FACCOUNTID.FNumber >= {filter_literal(start_account_number)}",
+            f"FACCOUNTID.FNumber <= {filter_literal(end_account_number)}",
+            period_range_filter(args["start_year"], args["start_period"], args["end_year"], args["end_period"]),
+        ]
+        if currency_number:
+            balance_filters.append(f"FCurrencyID.FNumber = {filter_literal(currency_number)}")
+            voucher_filters.append(f"FCURRENCYID.FNumber = {filter_literal(currency_number)}")
+        voucher_filters.append("FInvalid = '0'")
+        if args["exclude_adjustment_vouchers"]:
+            balance_filters.append("FAdjustPeriod = 0")
+            voucher_filters.append("FISADJUSTVOUCHER = 0")
+        if not args["include_unposted_vouchers"]:
+            voucher_filters.append("FPOSTERID > 0")
+
+        async def query_balance(year: int, period: int) -> tuple[list[dict[str, Any]], bool]:
+            period_filter = [*balance_filters, f"FYear = {year}", f"FPeriod = {period}"]
+            payload = client.query_payload(
+                SUBLEDGER_BALANCE_FORM_ID,
+                SUBLEDGER_BALANCE_FIELD_KEYS,
+                " AND ".join(period_filter),
+                "FAccountID.FNumber ASC,FCurrencyID.FNumber ASC",
+                args["balance_start_row"],
+                args["balance_limit"] + 1,
+            )
+            mapped = map_query_rows(rows(await client.post("query", payload, context)), SUBLEDGER_BALANCE_OUTPUT_FIELDS)
+            return mapped[: args["balance_limit"]], len(mapped) > args["balance_limit"]
+
+        opening_balances, opening_balances_has_more = await query_balance(args["start_year"], args["start_period"])
+        if start_period == end_period:
+            closing_balances = opening_balances
+            closing_balances_has_more = opening_balances_has_more
+        else:
+            closing_balances, closing_balances_has_more = await query_balance(args["end_year"], args["end_period"])
+
+        voucher_payload = client.query_payload(
+            SUBLEDGER_VOUCHER_FORM_ID,
+            SUBLEDGER_VOUCHER_FIELD_KEYS,
+            " AND ".join(voucher_filters),
+            "FDate ASC,FVOUCHERGROUPNO ASC,FBillNo ASC,FEntity_FEntryID ASC",
+            args["start_row"],
+            args["limit"] + 1,
+        )
+        mapped_entries = map_query_rows(
+            rows(await client.post("query", voucher_payload, context)),
+            SUBLEDGER_VOUCHER_OUTPUT_FIELDS,
+        )
+        entries = mapped_entries[: args["limit"]]
+        return {
+            "report_form_id": SUBLEDGER_REPORT_FORM_ID,
+            "report_name": "明细分类账",
+            "data_sources": [SUBLEDGER_BALANCE_FORM_ID, SUBLEDGER_VOUCHER_FORM_ID],
+            "account_book_number": account_book_number,
+            "start_period": {"year": args["start_year"], "period": args["start_period"]},
+            "end_period": {"year": args["end_year"], "period": args["end_period"]},
+            "account_range": {"start": start_account_number, "end": end_account_number},
+            "currency_number": currency_number,
+            "exclude_adjustment_vouchers": args["exclude_adjustment_vouchers"],
+            "include_unposted_vouchers": args["include_unposted_vouchers"],
+            "balance_start_row": args["balance_start_row"],
+            "balance_limit": args["balance_limit"],
+            "opening_balances": opening_balances,
+            "opening_balances_has_more": opening_balances_has_more,
+            "closing_balances": closing_balances,
+            "closing_balances_has_more": closing_balances_has_more,
+            "start_row": args["start_row"],
+            "count": len(entries),
+            "has_more": len(mapped_entries) > args["limit"],
+            "entries": entries,
+            "note": (
+                "GL_BALANCE stores posted accounting balances. When include_unposted_vouchers=true, "
+                "the returned voucher entries can include amounts not reflected in opening_balances or closing_balances."
+            ),
+        }
+
     tools = {
         "kingdee_smoke_test": ToolDefinition("kingdee_smoke_test", "Check MCP auth, mapped Kingdee user login, service limits, and optional tiny read-only query.", smoke_schema(), smoke),
         "kingdee_query_bills": ToolDefinition("kingdee_query_bills", "通用单据查询，按表单编码、字段、过滤条件和分页返回数据。", query_schema(required_form=True), query_bills),
@@ -181,6 +277,7 @@ def build_core_read_tools(client: KingdeeWebAPIClient) -> dict[str, ToolDefiniti
         "kingdee_query_materials": ToolDefinition("kingdee_query_materials", "查询物料基础资料。", materials_schema(), materials),
         "kingdee_query_partners": ToolDefinition("kingdee_query_partners", "查询客户或供应商基础资料。", partners_schema(), partners),
         "kingdee_list_forms": ToolDefinition("kingdee_list_forms", "列出常用金蝶表单编码和推荐字段。", object_schema({"keyword": string_prop("按表单编码、名称或别名过滤", "")}), list_forms),
+        "kingdee_query_subledger": ToolDefinition("kingdee_query_subledger", "组合查询 GL_BALANCE 科目余额与 GL_VOUCHER 凭证分录，返回明细分类账基础数据；不调用仅支持简单账表的 GetSysReportData。", subledger_schema(), subledger),
         "kingdee_get_fields": ToolDefinition("kingdee_get_fields", "返回表单推荐字段，并尝试读取 QueryBusinessInfo 元数据。", object_schema({"form_id": string_prop("表单编码，例如 BD_Material 或 PUR_PurchaseOrder", required=True)}, ["form_id"]), get_fields),
         "kingdee_query_pending_approvals": ToolDefinition("kingdee_query_pending_approvals", "查询待提交、审核中、已审核或被驳回的单据。", workflow_query_schema(), pending_approvals),
         "kingdee_query_workflow_status": ToolDefinition("kingdee_query_workflow_status", "查询指定单据的审核状态。", workflow_status_schema(), workflow_status),
@@ -191,6 +288,95 @@ def build_core_read_tools(client: KingdeeWebAPIClient) -> dict[str, ToolDefiniti
 
 DEFAULT_QUERY_FIELDS = "FID,FBillNo,FDate,FDocumentStatus"
 STATUS_MAP = {"A": "创建", "B": "审核中", "C": "已审核", "D": "重新审核", "Z": "暂存"}
+SUBLEDGER_REPORT_FORM_ID = "GL_RPT_SubLedger"
+SUBLEDGER_BALANCE_FORM_ID = "GL_BALANCE"
+SUBLEDGER_VOUCHER_FORM_ID = "GL_VOUCHER"
+SUBLEDGER_BALANCE_FIELD_KEYS = (
+    "FACCOUNTBOOKID.FNumber,FYear,FPeriod,FAccountID.FNumber,FAccountID.FName,"
+    "FCurrencyID.FNumber,FCurrencyID.FName,FBeginBalance,FDebit,FCredit,"
+    "FYtdDebit,FYtdCredit,FEndBalance,FAdjustPeriod"
+)
+SUBLEDGER_BALANCE_OUTPUT_FIELDS = (
+    "account_book_number",
+    "year",
+    "period",
+    "account_number",
+    "account_name",
+    "currency_number",
+    "currency_name",
+    "begin_balance",
+    "debit",
+    "credit",
+    "ytd_debit",
+    "ytd_credit",
+    "end_balance",
+    "adjust_period",
+)
+SUBLEDGER_VOUCHER_FIELD_KEYS = (
+    "FBillNo,FDate,FVOUCHERGROUPID.FName,FVOUCHERGROUPNO,FEXPLANATION,"
+    "FACCOUNTID.FNumber,FACCOUNTID.FName,FCURRENCYID.FNumber,FCURRENCYID.FName,"
+    "FDEBIT,FCREDIT,FDC,FDocumentStatus,FPOSTERID.FName,FEntity_FEntryID"
+)
+SUBLEDGER_VOUCHER_OUTPUT_FIELDS = (
+    "voucher_number",
+    "date",
+    "voucher_group",
+    "voucher_group_number",
+    "explanation",
+    "account_number",
+    "account_name",
+    "currency_number",
+    "currency_name",
+    "debit",
+    "credit",
+    "direction",
+    "document_status",
+    "poster_name",
+    "entry_id",
+)
+
+
+def filter_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def period_range_filter(start_year: int, start_period: int, end_year: int, end_period: int) -> str:
+    return (
+        f"((FYEAR > {start_year}) OR (FYEAR = {start_year} AND FPERIOD >= {start_period})) "
+        f"AND ((FYEAR < {end_year}) OR (FYEAR = {end_year} AND FPERIOD <= {end_period}))"
+    )
+
+
+def map_query_rows(data: list[Any], field_names: tuple[str, ...]) -> list[dict[str, Any]]:
+    error_message = query_error_message(data)
+    if error_message:
+        raise RuntimeError(error_message)
+    mapped: list[dict[str, Any]] = []
+    for row in data:
+        if not isinstance(row, list):
+            raise RuntimeError("金蝶 ExecuteBillQuery 返回了无法识别的数据行")
+        mapped.append({name: row[index] if index < len(row) else None for index, name in enumerate(field_names)})
+    return mapped
+
+
+def query_error_message(data: list[Any]) -> str:
+    if len(data) != 1 or not isinstance(data[0], list) or len(data[0]) != 1:
+        return ""
+    cell = data[0][0]
+    if not isinstance(cell, dict):
+        return ""
+    result = cell.get("Result")
+    if not isinstance(result, dict):
+        return ""
+    status = result.get("ResponseStatus")
+    if not isinstance(status, dict) or status.get("IsSuccess") is not False:
+        return ""
+    messages = [
+        str(error.get("Message") or "").strip()
+        for error in status.get("Errors") or []
+        if isinstance(error, dict) and str(error.get("Message") or "").strip()
+    ]
+    return "; ".join(messages) or str(status.get("Message") or "金蝶 ExecuteBillQuery 查询失败")
 
 
 def object_schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
@@ -269,6 +455,34 @@ def workflow_query_schema() -> dict[str, Any]:
 
 def workflow_status_schema() -> dict[str, Any]:
     return object_schema({"form_id": string_prop("表单编码", required=True), "bill_id": string_prop("单据 FID", required=True)}, ["form_id", "bill_id"])
+
+
+def subledger_schema() -> dict[str, Any]:
+    year_prop = {
+        "type": "integer",
+        "minimum": 2000,
+        "maximum": 9999,
+        "description": "会计年度",
+    }
+    return object_schema(
+        {
+            "start_year": year_prop,
+            "start_period": int_prop("开始期间；当前组合查询仅支持普通期间 1-12", 1, minimum=1, maximum=12),
+            "end_year": year_prop,
+            "end_period": int_prop("结束期间；当前组合查询仅支持普通期间 1-12", 1, minimum=1, maximum=12),
+            "account_book_number": string_prop("账簿编码，对应 FACCTBOOKID.FNumber，例如 001", required=True),
+            "start_account_number": string_prop("起始科目编码，例如 1001", required=True),
+            "end_account_number": string_prop("结束科目编码；留空时等于起始科目", ""),
+            "currency_number": string_prop("币别编码；留空时返回所有币别，当前账套人民币为 PRE001", ""),
+            "exclude_adjustment_vouchers": bool_prop("是否排除调整期间余额和凭证", True),
+            "include_unposted_vouchers": bool_prop("是否包含未过账凭证", False),
+            "balance_start_row": int_prop("期初和期末余额的起始行号", 0, minimum=0),
+            "balance_limit": int_prop("期初和期末余额每页返回条数", 100, minimum=1, maximum=100),
+            "start_row": int_prop("起始行号", 0, minimum=0),
+            "limit": int_prop("返回条数；轻量网关为控制响应体积最多返回 100 行", 20, minimum=1, maximum=100),
+        },
+        ["start_year", "end_year", "account_book_number", "start_account_number"],
+    )
 
 
 # Migrated lightweight catalog.
@@ -384,7 +598,8 @@ MIGRATED_OPS_TOOL_NAMES = frozenset(
 )
 
 MIGRATED_READ_TOOL_NAMES = frozenset(spec.name for spec in MIGRATED_QUERY_SPECS) | frozenset(spec.name for spec in MIGRATED_ENDPOINT_SPECS) | frozenset({"kingdee_view_production_order"})
-ALL_READ_TOOL_NAMES = CORE_READ_TOOL_NAMES | MIGRATED_READ_TOOL_NAMES
+EXPERIMENTAL_READ_TOOL_NAMES = frozenset({"kingdee_query_subledger"})
+ALL_READ_TOOL_NAMES = CORE_READ_TOOL_NAMES | MIGRATED_READ_TOOL_NAMES | EXPERIMENTAL_READ_TOOL_NAMES
 ALL_LIGHTWEIGHT_TOOL_NAMES = ALL_READ_TOOL_NAMES | MIGRATED_WRITE_TOOL_NAMES | MIGRATED_OPS_TOOL_NAMES
 
 

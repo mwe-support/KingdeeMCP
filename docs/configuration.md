@@ -103,7 +103,13 @@ Native `type: http` direct connections are an experimental fallback only. Use th
 
 - `operator` is the MCP caller identity for audit and troubleshooting.
 - `kingdee_username` is the real Kingdee user passed to `LoginByAppSecret`.
-- `allowed_tools` may contain profiles or explicit tool names. Common profiles are `read`, `full-read`, `write`, and `all`.
+- `allowed_tools` may contain one profile plus optional explicit tool names.
+- `read`/`core` exposes the 14 core read-only tools.
+- `full-read`/`read-all` exposes all read-only tools, including experimental tools.
+- `write` exposes stable read and write tools; it does not implicitly add experimental tools.
+- `all`/`high`/`*` exposes the stable complete catalog; it does not implicitly add experimental tools.
+- `ops` exposes only lightweight operational placeholders.
+- Experimental tools such as `kingdee_query_subledger` require `full-read` or the explicit tool name.
 - Plaintext Bearer tokens must not be written to this file or logs.
 - The lightweight gateway hot-reloads this file when it changes. Adding, disabling, or deleting a token does not require restarting `kingdee-mcp.service`.
 
@@ -119,7 +125,7 @@ Common `--allow` examples:
 # Core read-only tools, recommended for normal production users
 /public/KingdeeMCP/scripts/generate_token.sh --operator zhangsan --kingdee-username zhangsan --allow read
 
-# All read-only tools
+# All read-only tools, including experimental tools
 /public/KingdeeMCP/scripts/generate_token.sh --operator lisi --kingdee-username lisi --allow full-read
 
 # Write-capable token. The write profile already includes read tools.
@@ -129,8 +135,11 @@ Common `--allow` examples:
 /public/KingdeeMCP/scripts/generate_token.sh --operator zhaoliu --kingdee-username zhaoliu --allow kingdee_smoke_test --allow kingdee_query_purchase_orders
 /public/KingdeeMCP/scripts/generate_token.sh --operator zhaoliu --kingdee-username zhaoliu --allow kingdee_smoke_test,kingdee_query_purchase_orders
 
-# Complete catalog, trusted admins only
+# Complete stable catalog, trusted admins only; experiments remain excluded
 /public/KingdeeMCP/scripts/generate_token.sh --operator admin --kingdee-username admin --allow all
+
+# Stable catalog plus one explicitly authorized experimental tool
+/public/KingdeeMCP/scripts/generate_token.sh --operator admin --kingdee-username admin --allow all --allow kingdee_query_subledger
 
 # Machine-readable JSON output
 /public/KingdeeMCP/scripts/generate_token.sh --operator lisi --kingdee-username lisi --allow read --json

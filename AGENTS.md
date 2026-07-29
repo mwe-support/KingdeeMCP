@@ -324,11 +324,15 @@ memory parsing and indexing schemas.
 
 Current policy:
 
-- Bearer tokens with `allowed_tools: ["read"]` see only `_CORE_READ_TOOLS`.
-- Bearer tokens with `allowed_tools: ["write"]` or `["core"]` see
-  `_CORE_READ_TOOLS | _CORE_WRITE_TOOLS`.
-- Bearer tokens with `high`, `all`, or `*` see the full catalog and should be
-  reserved for trusted admin/development use.
+- Bearer tokens with `allowed_tools: ["read"]` or `["core"]` see only
+  `CORE_READ_TOOL_NAMES`.
+- Bearer tokens with `allowed_tools: ["full-read"]` or `["read-all"]` see all
+  read-only tools, including experimental read tools.
+- Bearer tokens with `allowed_tools: ["write"]` see stable read and write tools,
+  excluding experimental read tools.
+- Bearer tokens with `high`, `all`, or `*` see the stable full catalog,
+  excluding experimental tools, and should be reserved for trusted
+  admin/development use.
 - Explicit tool names may be used to grant individual non-core tools.
 - Keep the default catalog between 10 and 20 tools. If a new business module
   adds many tools, prefer a compact generic tool or a separate profile instead
@@ -375,5 +379,14 @@ Design rules for this refactor:
   - `kingdee_get_fields`
   - `kingdee_query_pending_approvals`
   - `kingdee_query_workflow_status`
+- Complex report form IDs must not be assumed to work with `GetSysReportData`;
+  validate the exact form against a real account before registering it.
+- Prefer documented, metadata-backed WebAPI objects over browser-internal
+  endpoints. The current `kingdee_query_subledger` implementation composes
+  `GL_BALANCE` and `GL_VOUCHER` because `GL_RPT_SubLedger` is rejected as a
+  non-simple report by `GetSysReportData`.
+- Composite report tools remain outside `CORE_READ_TOOL_NAMES` until their
+  accounting semantics, pagination, and tenant compatibility are broadly
+  validated. They require `full-read` or explicit tool authorization.
 - Write, audit, unaudit, delete, and push tools are registered under the write profile. SQL probing and in-process usage logs are not production features.
 - Local stdio should use the same lightweight dispatcher as HTTP. It may use `KINGDEE_USERNAME` as the local user when no HTTP Bearer context exists.

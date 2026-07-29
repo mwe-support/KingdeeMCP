@@ -10,7 +10,7 @@ KingdeeMCP 当前生产实现是一个轻量 MCP Gateway，用于让 MCP 客户�
 - HTTP 响应是 `application/json` + `Content-Length`，不返回 `text/event-stream`，不使用 `mcp-session-id`。
 - Bearer Token 映射到 `operator`、`kingdee_username`、`allowed_tools`。
 - 金蝶 WebAPI 仍使用共享 `AppID/AppSecret` + 指定金蝶用户 `LoginByAppSecret` 登录。
-- 工具已统一迁入 lightweight registry。默认 `read` token 只暴露 14 个核心只读工具；`full-read` 暴露完整只读目录；`write` 暴露读写工具；`ops` 只暴露轻量运维占位工具；`all`/`high`/`*` 暴露完整 lightweight 目录。
+- 工具已统一迁入 lightweight registry。默认 `read`/`core` token 只暴露 14 个核心只读工具；`full-read`/`read-all` 暴露全部只读工具（包含实验性工具）；`write` 暴露稳定只读和写入工具；`ops` 只暴露轻量运维占位工具；`all`/`high`/`*` 暴露稳定完整目录，但不自动包含实验性工具。
 
 ## 架构
 
@@ -337,6 +337,30 @@ Native HTTP direct mode is experimental. Use it only when the client has stable 
 | `kingdee_query_pending_approvals` | 按状态查询待处理/已审核/驳回类单据。 | `form_id`, `status`, `limit` |
 | `kingdee_query_workflow_status` | 查看单据工作流/单据状态摘要。 | `form_id`, `bill_id` |
 
+### 实验性候选工具
+
+`kingdee_query_subledger` 用于读取“财务会计 → 总账 → 账簿 → 明细分类账”的基础数据。它不调用 `GL_RPT_SubLedger` 的 `GetSysReportData`：当前环境对该调用明确返回“此接口暂时只支持简单账表”。工具改为通过标准 `ExecuteBillQuery` 组合：
+
+- `GL_BALANCE`：开始/结束期间的科目余额；
+- `GL_VOUCHER`：期间内的凭证分录。
+
+必填参数为 `account_book_number`、`start_year`、`end_year` 和 `start_account_number`。`end_account_number` 留空时等于起始科目；`currency_number` 留空时返回所有币别，当前账套人民币编码为 `PRE001`。当前组合查询支持普通期间 1-12，默认排除调整期余额、调整凭证和作废凭证。分录默认只返回已过账凭证，默认 20 行、最多 100 行；通过 `start_row` 和 `limit` 分页。余额通过 `balance_start_row` 和 `balance_limit` 独立分页。
+
+```text
+kingdee_query_subledger(
+  account_book_number="001",
+  start_year=2026,
+  start_period=6,
+  end_year=2026,
+  end_period=6,
+  start_account_number="1001",
+  currency_number="PRE001",
+  limit=20
+)
+```
+
+该组合查询已在真实账套验证余额与页面一致，但仍保留为实验工具：它返回余额和凭证基础数据，不模拟页面的对方科目匹配、核算维度展开、期间小计或报表分页。使用 `full-read` 或显式授权 `kingdee_query_subledger`；`read`、`write`、`all`、`high`、`*` 均不会隐式授权它。
+
 Disallowed or unknown tool calls return unknown_tool/disallowed_tool and must not call Kingdee WebAPI.
 
 ## 测试
@@ -370,6 +394,7 @@ kingdee_smoke_test(run_query=false)
 | `401 missing_or_invalid_bearer` | 缺失、错误或禁用 Bearer token；检查 `MCP_TOKEN_CONFIG`。 |
 | `server_busy` | 并发超过 `MCP_MAX_CONCURRENT_TOOLS` 或队列等待超时；稍后重试或调低客户端并发。 |
 | 金蝶登录失败 | 检查 `KINGDEE_SERVER_URL`、账套、AppID/AppSecret、token 映射的 `kingdee_username` 是否在金蝶后台允许指定用户登录。 |
+| `此接口暂时只支持简单账表` | 不要用 `GetSysReportData` 查询 `GL_RPT_SubLedger`；当前工具应走 `GL_BALANCE` + `GL_VOUCHER` 组合查询。 |
 | `Connection refused` | 当前服务器到 `KINGDEE_SERVER_URL` 主机/端口不可达，不是 MCP 协议问题。 |
 | 客户端拿到 SSE/session 相关错误 | 确认客户端走的是 lightweight HTTP endpoint；生产入口不会返回 SSE 或 `mcp-session-id`。 |
 | 服务监听公网 | 立即改回 `MCP_HOST=127.0.0.1` 并重启 systemd。 |
@@ -384,7 +409,11 @@ kingdee_smoke_test(run_query=false)
 
 ## Lightweight Tool Catalog
 
-The lightweight registry now contains the migrated read, write, and ops tool names. Default read tokens still expose only the 14 core read tools; broader profiles are explicit.
+The lightweight registry contains core, migrated, experimental, write, and ops tool names. Default read tokens expose only the 14 core read tools; broader profiles are explicit.
+
+## Upstream Attribution
+
+This repository is a customized fork maintained at <https://github.com/mwe-support/KingdeeMCP>. The original upstream project is <https://github.com/WaHaiLong/KingdeeMCP>. Keep the upstream attribution and MIT license notices when redistributing modified versions.
 
 ## License
 

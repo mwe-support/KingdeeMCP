@@ -7,11 +7,11 @@
   <meta name="description" content="金蝶云星空 MCP Server，当前 lightweight 生产入口让 AI 安全查询金蝶 ERP。支持 Claude Desktop、Cursor、Windsurf、Cline 等 MCP 兼容客户端，聚焦采购、销售、库存、基础资料等只读场景。">
   <meta name="keywords" content="金蝶MCP,金蝶云星空,MCP Server,金蝶AI,金蝶ERP查询,Kingdee MCP,AI查询金蝶,金蝶API,Claude金蝶,金蝶智能助手">
   <meta name="robots" content="index, follow">
-  <link rel="canonical" href="https://wahailong.github.io/KingdeeMCP/">
+  <link rel="canonical" href="https://github.com/mwe-support/KingdeeMCP">
 
   <!-- Open Graph / 社交分享 -->
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://wahailong.github.io/KingdeeMCP/">
+  <meta property="og:url" content="https://github.com/mwe-support/KingdeeMCP">
   <meta property="og:title" content="Kingdee MCP Server - 让 AI 安全查询金蝶云星空">
   <meta property="og:description" content="金蝶云星空 MCP Server，让 AI 安全查询金蝶 ERP。支持 Claude Desktop、Cursor、Windsurf、Cline 等 MCP 兼容客户端。">
   <meta property="og:site_name" content="Kingdee MCP">
@@ -28,7 +28,7 @@
     "@type": "SoftwareApplication",
     "name": "Kingdee MCP Server",
     "description": "金蝶云星空 MCP Server，让 AI 安全查询金蝶 ERP，支持采购、销售、库存等只读场景",
-    "url": "https://wahailong.github.io/KingdeeMCP/",
+    "url": "https://github.com/mwe-support/KingdeeMCP",
     "applicationCategory": "BusinessApplication",
     "operatingSystem": "Windows, macOS, Linux",
     "offers": {
@@ -37,9 +37,10 @@
       "priceCurrency": "CNY"
     },
     "author": {
-      "@type": "Person",
-      "name": "WaHaiLong"
+      "@type": "Organization",
+      "name": "mwe-support"
     },
+    "isBasedOn": "https://github.com/WaHaiLong/KingdeeMCP",
     "keywords": "金蝶MCP,金蝶云星空,MCP Server,AI ERP,金蝶自动化"
   }
   </script>
@@ -783,7 +784,7 @@
           <li><a href="#examples">示例</a></li>
           <li><a href="#faq">常见问题</a></li>
         </ul>
-        <a href="https://github.com/WaHaiLong/KingdeeMCP" class="github-btn" target="_blank">
+        <a href="https://github.com/mwe-support/KingdeeMCP" class="github-btn" target="_blank">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
             <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
           </svg>
@@ -824,7 +825,7 @@
         <div class="quick-install">
           <div class="quick-install-label">快速安装</div>
           <div class="install-box">
-            <code>pip install kingdee-mcp</code>
+            <code>pip install "git+https://github.com/mwe-support/KingdeeMCP.git"</code>
             <button class="copy-btn" onclick="copyInstall(this)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="9" y="9" width="13" height="13" rx="2"/>
@@ -835,18 +836,15 @@
           </div>
         </div>
 
-        <!-- PyPI Badges -->
+        <!-- Repository Badges -->
         <div class="badges">
-          <a href="https://pypi.org/project/kingdee-mcp/" target="_blank">
-            <img src="https://img.shields.io/pypi/v/kingdee-mcp?style=flat-square&color=2563eb" alt="PyPI version">
+          <a href="https://github.com/mwe-support/KingdeeMCP" target="_blank">
+            <img src="https://img.shields.io/github/stars/mwe-support/KingdeeMCP?style=flat-square&color=2563eb" alt="GitHub stars">
           </a>
-          <a href="https://pypi.org/project/kingdee-mcp/" target="_blank">
-            <img src="https://img.shields.io/pypi/dm/kingdee-mcp?style=flat-square&color=10b981" alt="Downloads">
+          <a href="https://github.com/mwe-support/KingdeeMCP" target="_blank">
+            <img src="https://img.shields.io/badge/Python-3.11%2B-10b981?style=flat-square" alt="Python 3.11+">
           </a>
-          <a href="https://pypi.org/project/kingdee-mcp/" target="_blank">
-            <img src="https://img.shields.io/pypi/pyversions/kingdee-mcp?style=flat-square" alt="Python versions">
-          </a>
-          <a href="https://github.com/WaHaiLong/KingdeeMCP/blob/main/LICENSE" target="_blank">
+          <a href="https://github.com/mwe-support/KingdeeMCP/blob/main/LICENSE" target="_blank">
             <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License">
           </a>
         </div>
@@ -925,7 +923,7 @@
                 <path d="M3 9h18M9 21V9"/>
               </svg>
             </div>
-            <h3>14 个只读工具</h3>
+            <h3>14 个核心只读工具</h3>
             <p>涵盖采购、销售、库存、基础资料等核心业务模块，开箱即用。</p>
           </div>
           <div class="feature-card">
@@ -1051,6 +1049,11 @@
             <div class="tool-desc">查看单据状态摘要</div>
           </div>
         </div>
+        <p style="margin-top: 24px; color: var(--text-muted);">
+          实验工具 <code>kingdee_query_subledger</code> 通过
+          <code>GL_BALANCE</code> + <code>GL_VOUCHER</code> 组合读取明细分类账基础数据，
+          仅由 <code>full-read</code> 或显式工具名授权，不计入默认 14 个核心工具。
+        </p>
       </div>
     </section>
 
@@ -1223,7 +1226,7 @@ curl -sS http://127.0.0.1:8199/healthz</code></pre>
   <footer>
     <div class="container">
       <div class="footer-links">
-        <a href="https://github.com/WaHaiLong/KingdeeMCP" target="_blank">GitHub</a>
+        <a href="https://github.com/mwe-support/KingdeeMCP" target="_blank">GitHub</a>
         <a href="https://modelcontextprotocol.io/" target="_blank">MCP 文档</a>
         <a href="https://www.kingdee.com/" target="_blank">金蝶官网</a>
       </div>
@@ -1258,7 +1261,7 @@ curl -sS http://127.0.0.1:8199/healthz</code></pre>
 
     // Copy install command
     function copyInstall(btn) {
-      const text = 'pip install kingdee-mcp';
+      const text = 'pip install "git+https://github.com/mwe-support/KingdeeMCP.git"';
       navigator.clipboard.writeText(text).then(() => {
         btn.classList.add('copied');
         btn.innerHTML = `
