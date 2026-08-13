@@ -84,6 +84,32 @@ Native `type: http` direct connections are an experimental fallback only. Use th
 | `MCP_TOOL_CALL_TIMEOUT_SECONDS` | no | `120` | Wall-clock timeout for one tool call. |
 | `MCP_HTTP_REQUEST_QUEUE_SIZE` | no | `128` | TCP accept backlog for the local `ThreadingHTTPServer`. |
 
+## Structured Access Logging
+
+| Variable | Required | Recommended value | Description |
+| --- | --- | --- | --- |
+| `MCP_ACCESS_LOG_PATH` | production | `/var/log/kingdee-mcp/access.jsonl` | UTF-8 JSON Lines HTTP access log. Empty disables file access logging. |
+| `MCP_ACCESS_LOG_RETENTION_DAYS` | no | `30` | Daily UTC archive retention. Must be from 1 to 30; values above 30 are rejected. |
+
+Every tool call and every failed or disconnected HTTP/MCP request is recorded.
+Successful health checks, initialization, `ping`, `tools/list`, and GET
+connection probes are skipped. Each retained event records:
+
+- MCP operator as `user`;
+- mapped `kingdee_username`;
+- normalized permission `role`;
+- `tool_name` for `tools/call`;
+- `duration_ms`, `response_bytes`, `status`, and `http_status`;
+- an incoming safe `X-Request-ID` or a generated `request_id`.
+
+The server returns `X-Request-ID` in the HTTP response. Logs never include
+Bearer tokens, Authorization headers, AppSecret, cookies, session ids, tool
+arguments, or full business responses.
+
+The production systemd unit creates `/var/log/kingdee-mcp`. Rotation and
+age-based deletion are handled by the lightweight process without changing
+global journald retention. See [access-logging.md](access-logging.md).
+
 ## Bearer Token Mapping
 
 `MCP_TOKEN_CONFIG` must point to a JSON file with hashed tokens only:

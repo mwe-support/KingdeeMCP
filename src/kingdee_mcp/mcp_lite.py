@@ -4,8 +4,11 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import sys
 import threading
+import time
+import uuid
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
 from http import HTTPStatus
@@ -13,6 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+from .access_log import JsonAccessLogger, load_access_log_config
 from .auth import AuthError, OperatorContext, authenticate_authorization_header, load_token_records, local_operator_context
 from .config import ServiceConfig, TransportConfig, load_service_config, load_transport_config
 from .kingdee_client import KingdeeWebAPIClient
@@ -124,7 +128,13 @@ class AuthConfig:
 
 
 class KingdeeLiteApplication:
-    def __init__(self, service_config: ServiceConfig | None = None, transport_config: TransportConfig | None = None, client: KingdeeWebAPIClient | None = None) -> None:
+    def __init__(
+        self,
+        service_config: ServiceConfig | None = None,
+        transport_config: TransportConfig | None = None,
+        client: KingdeeWebAPIClient | None = None,
+        access_logger: JsonAccessLogger | None = None,
+    ) -> None:
         self.service_config = service_config or load_service_config()
         self.transport_config = transport_config or load_transport_config()
         self.auth = AuthConfig.load(self.transport_config, self.service_config)
@@ -132,10 +142,12 @@ class KingdeeLiteApplication:
         self.client = client or KingdeeWebAPIClient(self.service_config, max_concurrent_requests=max_kingdee)
         self.tools = build_core_read_tools(self.client)
         self._runner = AsyncLoopRunner()
+        self.access_logger = access_logger or JsonAccessLogger(load_access_log_config())
         self._tool_semaphore = threading.BoundedSemaphore(max(1, int(os.getenv("MCP_MAX_CONCURRENT_TOOLS", "8") or "8")))
 
     def close(self) -> None:
         self._runner.close()
+        self.access_logger.close()
 
     def context_from_headers(self, headers: dict[str, str] | None = None) -> OperatorContext:
         headers = headers or {}
@@ -290,6 +302,73 @@ def jsonrpc_error(request_id: Any, code: int, message: str, data: dict[str, Any]
     return {"jsonrpc": "2.0", "id": request_id, "error": payload}
 
 
+_REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+_ROLE_PRECEDENCE = ("high", "all", "*", "ops", "write", "full-read", "read-all", "read", "core")
+
+
+def access_request_id(headers: dict[str, str]) -> str:
+    supplied = next(
+        (value for key, value in headers.items() if key.lower() == "x-request-id"),
+        "",
+    )
+    supplied = supplied.strip()
+    if _REQUEST_ID_PATTERN.fullmatch(supplied):
+        return supplied
+    return uuid.uuid4().hex
+
+
+def access_role(context: OperatorContext | None) -> str | None:
+    if context is None:
+        return None
+    for role in _ROLE_PRECEDENCE:
+        if role not in context.allowed_tools:
+            continue
+        if role in {"*", "all"}:
+            return "all"
+        if role in {"full-read", "read-all"}:
+            return "full-read"
+        if role in {"read", "core"}:
+            return "read"
+        return role
+    return "custom" if context.allowed_tools else "none"
+
+
+def access_request_metadata(body: bytes | None) -> tuple[str | None, str | None]:
+    if not body:
+        return None, None
+    try:
+        request = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None, None
+    if not isinstance(request, dict):
+        return None, None
+    method = str(request.get("method") or "").strip() or None
+    params = request.get("params")
+    if method != "tools/call" or not isinstance(params, dict):
+        return method, None
+    tool_name = str(params.get("name") or "").strip() or None
+    return method, tool_name
+
+
+def access_response_status(
+    http_status: int,
+    payload: dict[str, Any],
+    mcp_method: str | None,
+) -> tuple[str, str | None]:
+    if http_status >= HTTPStatus.BAD_REQUEST:
+        error_type = str(payload.get("error") or "http_error")
+        return "error", error_type
+    if mcp_method != "tools/call":
+        return "success", None
+    result = payload.get("result")
+    if not isinstance(result, dict) or not result.get("isError"):
+        return "success", None
+    structured = result.get("structuredContent")
+    error = structured.get("error") if isinstance(structured, dict) else None
+    error_type = str(error.get("type") or "tool_error") if isinstance(error, dict) else "tool_error"
+    return "error", error_type
+
+
 def process_http_request(app: KingdeeLiteApplication, *, method: str, path: str, headers: dict[str, str] | None = None, body: bytes | None = None) -> tuple[int, dict[str, Any]]:
     headers = {str(k): str(v) for k, v in (headers or {}).items()}
     if method == "GET" and path == "/healthz":
@@ -319,7 +398,7 @@ def process_http_request(app: KingdeeLiteApplication, *, method: str, path: str,
 def _build_http_handler(app: KingdeeLiteApplication) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
         server_version = "KingdeeMCPLite/1.0"
-        cors_allow_headers = "Authorization, Content-Type, Accept, CF-Access-Client-Id, CF-Access-Client-Secret, Mcp-Session-Id, mcp-session-id"
+        cors_allow_headers = "Authorization, Content-Type, Accept, X-Request-ID, CF-Access-Client-Id, CF-Access-Client-Secret, Mcp-Session-Id, mcp-session-id"
         cors_allow_methods = "GET, POST, OPTIONS"
 
         def _cors_origin(self) -> str | None:
@@ -343,32 +422,95 @@ def _build_http_handler(app: KingdeeLiteApplication) -> type[BaseHTTPRequestHand
             self.send_header("Access-Control-Allow-Headers", self.cors_allow_headers)
             self.send_header("Access-Control-Allow-Methods", self.cors_allow_methods)
             self.send_header("Access-Control-Max-Age", "300")
+            self.send_header("Access-Control-Expose-Headers", "X-Request-ID")
 
-        def _send_json(self, status: int, payload: dict[str, Any]) -> None:
-            body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self._send_cors_headers()
-            self.end_headers()
-            if status != HTTPStatus.NO_CONTENT:
-                self.wfile.write(body)
+        def _send_json(self, status: int, payload: dict[str, Any], request_id: str) -> tuple[int, bool]:
+            body = b"" if status == HTTPStatus.NO_CONTENT else json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            try:
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("X-Request-ID", request_id)
+                self._send_cors_headers()
+                self.end_headers()
+                if body:
+                    self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                return len(body), False
+            return len(body), True
+
+        def _access_context(self, headers: dict[str, str]) -> OperatorContext | None:
+            if self.path != app.transport_config.path:
+                return None
+            try:
+                return app.context_from_headers(headers)
+            except AuthError:
+                return None
+
+        def _handle_json_request(self, method: str, body: bytes | None = None) -> None:
+            started = time.monotonic()
+            headers = {key: value for key, value in self.headers.items()}
+            request_id = access_request_id(headers)
+            mcp_method, tool_name = access_request_metadata(body)
+            context = self._access_context(headers) if method != "OPTIONS" else None
+            error_type: str | None = None
+            try:
+                http_status, payload = process_http_request(
+                    app,
+                    method=method,
+                    path=self.path,
+                    headers=headers,
+                    body=body,
+                )
+                status, error_type = access_response_status(http_status, payload, mcp_method)
+            except Exception as exc:
+                http_status = HTTPStatus.INTERNAL_SERVER_ERROR
+                payload = {"error": "internal_error"}
+                status = "error"
+                error_type = type(exc).__name__
+                print(
+                    json.dumps(
+                        {
+                            "event": "mcp_internal_error",
+                            "request_id": request_id,
+                            "error_type": error_type,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    file=sys.stderr,
+                    flush=True,
+                )
+
+            response_bytes, delivered = self._send_json(http_status, payload, request_id)
+            if not delivered:
+                status = "client_disconnected"
+                error_type = "connection_closed"
+            if tool_name is not None or status != "success":
+                app.access_logger.write(
+                    {
+                        "request_id": request_id,
+                        "user": context.operator if context else None,
+                        "kingdee_username": context.kingdee_username if context else None,
+                        "role": access_role(context),
+                        "tool_name": tool_name,
+                        "mcp_method": mcp_method,
+                        "duration_ms": round((time.monotonic() - started) * 1000, 3),
+                        "response_bytes": response_bytes,
+                        "status": status,
+                        "http_status": int(http_status),
+                        "error_type": error_type,
+                    }
+                )
 
         def do_GET(self) -> None:  # noqa: N802
-            status, payload = process_http_request(app, method="GET", path=self.path, headers={key: value for key, value in self.headers.items()})
-            self._send_json(status, payload)
+            self._handle_json_request("GET")
 
         def do_POST(self) -> None:  # noqa: N802
             length = int(self.headers.get("Content-Length", "0") or "0")
-            status, payload = process_http_request(app, method="POST", path=self.path, headers={key: value for key, value in self.headers.items()}, body=self.rfile.read(length))
-            self._send_json(status, payload)
+            self._handle_json_request("POST", self.rfile.read(length))
 
         def do_OPTIONS(self) -> None:  # noqa: N802
-            status, payload = process_http_request(app, method="OPTIONS", path=self.path, headers={key: value for key, value in self.headers.items()})
-            self.send_response(status)
-            self._send_cors_headers()
-            self.send_header("Content-Length", "0")
-            self.end_headers()
+            self._handle_json_request("OPTIONS")
 
         def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
             return

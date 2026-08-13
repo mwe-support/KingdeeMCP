@@ -61,6 +61,17 @@ Important runtime details:
 - SQL Server probing via `MCP_SQLSERVER_*` is not part of the lightweight
   production build. Keep it out unless an explicit optional ops module is
   designed.
+- Production HTTP access logs record every tool call and every failed or
+  disconnected request as UTF-8 JSON Lines written independently from
+  journald. Each retained event records `user`, `kingdee_username`, `role`,
+  `tool_name`, `duration_ms`, `response_bytes`, `status`,
+  `http_status`, and `request_id`.
+- Never log Authorization headers, Bearer tokens, AppSecret, cookies, session
+  ids, tool arguments, or full business payloads.
+- Accept a safe client `X-Request-ID` or generate one, return it in the HTTP
+  response, and use the same value in the access log.
+- Access logs rotate daily in UTC. `MCP_ACCESS_LOG_RETENTION_DAYS` must remain
+  between 1 and 30; production uses 30 days.
 
 ## Business Context
 

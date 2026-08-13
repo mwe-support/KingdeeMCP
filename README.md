@@ -89,6 +89,9 @@ MCP_MAX_CONCURRENT_KINGDEE_REQUESTS=4
 MCP_TOOL_QUEUE_TIMEOUT_SECONDS=15
 MCP_TOOL_CALL_TIMEOUT_SECONDS=120
 MCP_HTTP_REQUEST_QUEUE_SIZE=128
+
+MCP_ACCESS_LOG_PATH=/var/log/kingdee-mcp/access.jsonl
+MCP_ACCESS_LOG_RETENTION_DAYS=30
 ```
 
 `KINGDEE_USERNAME` 在 HTTP 生产模式下应留空。共享远程部署不使用一个全局金蝶用户，而是从 Bearer Token 映射出 `kingdee_username`。
@@ -115,6 +118,8 @@ MCP_HTTP_REQUEST_QUEUE_SIZE=128
 | `MCP_TOOL_QUEUE_TIMEOUT_SECONDS` | `15` | 否 | 等待工具并发槽位的时间，超时返回 `server_busy`。 |
 | `MCP_TOOL_CALL_TIMEOUT_SECONDS` | `120` | 否 | 单次工具调用最大执行时间。 |
 | `MCP_HTTP_REQUEST_QUEUE_SIZE` | `128` | 否 | 本地 HTTP server TCP backlog。 |
+| `MCP_ACCESS_LOG_PATH` | `/var/log/kingdee-mcp/access.jsonl` | 是 | UTF-8 JSON Lines HTTP 访问日志；留空可禁用。 |
+| `MCP_ACCESS_LOG_RETENTION_DAYS` | `30` | 否 | 每日 UTC 轮转日志保留天数，只允许 1-30。 |
 
 以下旧变量不被 lightweight 生产入口读取，不应放入当前生产 `.env`：
 
@@ -387,6 +392,30 @@ kingdee_smoke_test(run_query=false)
 
 `run_query=false` 只验证认证和登录链路，避免在连通性未确认前放大查询负载。
 
+## 结构化访问日志
+
+生产服务将所有工具调用以及失败或断连的 HTTP/MCP 请求写入：
+
+```text
+/var/log/kingdee-mcp/access.jsonl
+```
+
+成功的健康检查、初始化、`ping`、`tools/list` 和 GET 连接探测不会记录，
+避免无业务价值的高频传输日志。
+
+每行是一个 UTF-8 JSON 对象，包含 MCP 用户、金蝶用户、角色、工具名、
+耗时、响应字节数、状态、HTTP 状态和 request ID。响应头会返回相同的
+`X-Request-ID`，可用于关联客户端报错。日志不会记录 Bearer Token、
+AppSecret、Cookie、工具参数或完整业务响应。
+
+日志按 UTC 每日轮转，并强制最多保留 30 天。查看失败调用：
+
+```bash
+jq -c 'select(.status != "success")' /var/log/kingdee-mcp/access.jsonl
+```
+
+完整字段和排查命令见 [docs/access-logging.md](docs/access-logging.md)。
+
 ## 故障排查
 
 | 现象 | 判断 |
@@ -405,6 +434,7 @@ kingdee_smoke_test(run_query=false)
 - [docs/rate-limiting.md](docs/rate-limiting.md): lightweight 并发控制策略。
 - [docs/streamable-http-auth-design.md](docs/streamable-http-auth-design.md): 当前 HTTP 和多用户认证设计。
 - [docs/permission-architecture.md](docs/permission-architecture.md): Bearer Token 到金蝶用户的权限模型。
+- [docs/access-logging.md](docs/access-logging.md): 结构化访问日志字段、保留策略和排查命令。
 - [deploy/cloudflared/README.md](deploy/cloudflared/README.md): Cloudflared Docker Compose 运行说明。
 
 ## Lightweight Tool Catalog

@@ -2,7 +2,7 @@ name: kingdee-mcp-edge
 
 services:
   cloudflared:
-    image: docker.m.daocloud.io/cloudflare/cloudflared:2026.5.2
+    image: docker.m.daocloud.io/cloudflare/cloudflared:2026.7.3
     container_name: kingdee-mcp-cloudflared
     restart: unless-stopped
     network_mode: host
