@@ -309,6 +309,16 @@ the Open Platform specified-user-login list.
   Kingdee environment.
 - Treat save, submit, audit, unaudit, delete, and push operations as high-risk
   surfaces.
+- Material image integration uses `BD_Material`: upload writes `FIMAGE1`, while
+  View/download reads `Image`. Keep the first version on database image storage
+  (`ImgStorageType=A`) and accept only PNG/JPEG within
+  `MCP_MATERIAL_IMAGE_MAX_BYTES`.
+- Never upload an image to an audited material. `kingdee_material_image` upload
+  must reject every status except `DocumentStatus=A`, must require a write-level
+  scope, and must verify the saved bytes by size and SHA-256 before success.
+- Material image tests may use only purpose-created, unreviewed test materials.
+  The tool must not submit, audit, unaudit, delete, or otherwise advance their
+  business state.
 - Keep read-only and write/high-risk tools clearly separated in code and docs.
 - New config examples must use placeholders only.
 - Never commit real tokens, AppSecret, SessionId, cookies, phone numbers, or

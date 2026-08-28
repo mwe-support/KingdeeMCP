@@ -82,6 +82,7 @@ Native `type: http` direct connections are an experimental fallback only. Use th
 | `MCP_MAX_CONCURRENT_KINGDEE_REQUESTS` | no | `4` | Maximum concurrent outbound Kingdee WebAPI requests. Protects Kingdee and this host. |
 | `MCP_TOOL_QUEUE_TIMEOUT_SECONDS` | no | `15` | Wait time for a tool slot before returning `server_busy`. Use 15 seconds for WorkBuddy batch calls behind Cloudflare Access. |
 | `MCP_TOOL_CALL_TIMEOUT_SECONDS` | no | `120` | Wall-clock timeout for one tool call. |
+| `MCP_MATERIAL_IMAGE_MAX_BYTES` | no | `2097152` | Maximum decoded PNG/JPEG size accepted by `kingdee_material_image` upload. The 2 MiB default bounds Base64 request memory. |
 | `MCP_HTTP_REQUEST_QUEUE_SIZE` | no | `128` | TCP accept backlog for the local `ThreadingHTTPServer`. |
 
 ## Structured Access Logging
@@ -136,6 +137,7 @@ global journald retention. See [access-logging.md](access-logging.md).
 - `all`/`high`/`*` exposes the stable complete catalog; it does not implicitly add experimental tools.
 - `ops` exposes only lightweight operational placeholders.
 - `kingdee_query_subledger` is available through `full-read`, `read-all`, `write`, or the explicit tool name.
+- `kingdee_material_image` download is available through `full-read`, `read-all`, or `write`; upload is additionally checked inside the handler and requires `write`, `all`, `high`, or `*`.
 - Plaintext Bearer tokens must not be written to this file or logs.
 - The lightweight gateway hot-reloads this file when it changes. Adding, disabling, or deleting a token does not require restarting `kingdee-mcp.service`.
 

@@ -32,6 +32,7 @@ def test_full_read_scope_exposes_migrated_read_tools_without_write_or_ops():
     assert "kingdee_query_production_orders" in names
     assert "kingdee_query_subledger" in names
     assert "kingdee_query_operation_logs" in names
+    assert "kingdee_material_image" in names
     assert "kingdee_save_bill" not in names
     assert "kingdee_usage_stats" not in names
 
@@ -43,6 +44,7 @@ def test_write_scope_exposes_read_and_write_tools_without_ops():
     assert "kingdee_save_bill" in names
     assert "kingdee_delete_bills" in names
     assert "kingdee_query_subledger" in names
+    assert "kingdee_material_image" in names
     assert "kingdee_usage_stats" not in names
 
 

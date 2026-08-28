@@ -88,6 +88,7 @@ MCP_MAX_CONCURRENT_TOOLS=8
 MCP_MAX_CONCURRENT_KINGDEE_REQUESTS=4
 MCP_TOOL_QUEUE_TIMEOUT_SECONDS=15
 MCP_TOOL_CALL_TIMEOUT_SECONDS=120
+MCP_MATERIAL_IMAGE_MAX_BYTES=2097152
 MCP_HTTP_REQUEST_QUEUE_SIZE=128
 
 MCP_ACCESS_LOG_PATH=/var/log/kingdee-mcp/access.jsonl
@@ -117,6 +118,7 @@ MCP_ACCESS_LOG_RETENTION_DAYS=30
 | `MCP_MAX_CONCURRENT_KINGDEE_REQUESTS` | `4` | 否 | 对金蝶 WebAPI 的最大并发请求数。 |
 | `MCP_TOOL_QUEUE_TIMEOUT_SECONDS` | `15` | 否 | 等待工具并发槽位的时间，超时返回 `server_busy`。 |
 | `MCP_TOOL_CALL_TIMEOUT_SECONDS` | `120` | 否 | 单次工具调用最大执行时间。 |
+| `MCP_MATERIAL_IMAGE_MAX_BYTES` | `2097152` | 否 | `kingdee_material_image` 上传所接受的 PNG/JPEG 解码后最大字节数，默认 2 MiB。 |
 | `MCP_HTTP_REQUEST_QUEUE_SIZE` | `128` | 否 | 本地 HTTP server TCP backlog。 |
 | `MCP_ACCESS_LOG_PATH` | `/var/log/kingdee-mcp/access.jsonl` | 是 | UTF-8 JSON Lines HTTP 访问日志；留空可禁用。 |
 | `MCP_ACCESS_LOG_RETENTION_DAYS` | `30` | 否 | 每日 UTC 轮转日志保留天数，只允许 1-30。 |
@@ -341,6 +343,35 @@ Native HTTP direct mode is experimental. Use it only when the client has stable 
 | `kingdee_get_fields` | 查看推荐字段和可用元数据摘要。 | `form_id` |
 | `kingdee_query_pending_approvals` | 按状态查询待处理/已审核/驳回类单据。 | `form_id`, `status`, `limit` |
 | `kingdee_query_workflow_status` | 查看单据工作流/单据状态摘要。 | `form_id`, `bill_id` |
+| `kingdee_material_image` | 上传或下载物料数据库图片。下载对 `full-read`/`write` 开放；上传要求 `write`，且仅允许未审核物料。 | `action`, `material_id`, `image_base64` |
+
+### 物料图片工具
+
+`kingdee_material_image` 将上传和下载合并为一个通用工具：
+
+- `action="upload"`：要求 `write` 权限、明确的 `material_id` 和 PNG/JPEG `image_base64`。服务只允许 `DocumentStatus=A` 的未审核物料，写入 `FIMAGE1` 后通过 `View` 返回的 `Image` 做字节数和 SHA-256 回读校验。
+- `action="download"`：返回 `image_base64`、`mime_type`、`byte_size`、`sha256` 和建议文件名，可供 `full-read`/`read-all`/`write` 用户读取。
+- 第一版只支持数据库图片存储（`ImgStorageType=A`），不操作文件服务器图片字段，不提交、不审核、不反审核、不删除物料。
+- 默认上传上限为解码后 2 MiB，可通过 `MCP_MATERIAL_IMAGE_MAX_BYTES` 调整。Base64 会增加请求和内存体积，生产环境不建议设置过大。
+
+上传示例：
+
+```json
+{
+  "action": "upload",
+  "material_id": 12345,
+  "image_base64": "<PNG-or-JPEG-base64>"
+}
+```
+
+下载示例：
+
+```json
+{
+  "action": "download",
+  "material_id": 12345
+}
+```
 
 ### 实验性候选工具
 

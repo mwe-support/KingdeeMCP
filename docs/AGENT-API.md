@@ -35,6 +35,13 @@ HTTP production maps callers from `MCP_TOKEN_CONFIG`; do not use one global `KIN
 | `kingdee_get_fields` | `form_id` | Recommended fields and optional metadata summary. |
 | `kingdee_query_pending_approvals` | optional `form_id`, `status`, `limit` | Status-oriented read query. |
 | `kingdee_query_workflow_status` | `form_id`, `bill_id` | View status for one bill. |
+| `kingdee_material_image` | `action=upload|download`, `material_id`; upload also requires `image_base64` | Database image upload/download for material master data. Upload requires write permission and an unreviewed `DocumentStatus=A` material. |
+
+## Material Image Contract
+
+`kingdee_material_image` uses Kingdee material form `BD_Material`. Upload writes the database image field `FIMAGE1`; verification and download read the `Image` value returned by the View API. Accepted content is PNG or JPEG. The server validates file signatures, enforces `MCP_MATERIAL_IMAGE_MAX_BYTES` on upload, and verifies the saved image by decoded byte size and SHA-256 before reporting success.
+
+The tool does not use the file-server image field, does not change `ImgStorageType`, and never submits, audits, unaudits, or deletes a material. Upload is rejected unless the current material status is exactly `A` (unreviewed). Callers must use a purpose-created test material for integration tests and must not use audited production material.
 
 ## Experimental Read Tool
 

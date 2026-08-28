@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import base64
+import binascii
+import hashlib
+import os
+import re
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
@@ -597,7 +602,8 @@ MIGRATED_OPS_TOOL_NAMES = frozenset(
     }
 )
 
-MIGRATED_READ_TOOL_NAMES = frozenset(spec.name for spec in MIGRATED_QUERY_SPECS) | frozenset(spec.name for spec in MIGRATED_ENDPOINT_SPECS) | frozenset({"kingdee_view_production_order"})
+MATERIAL_IMAGE_TOOL_NAME = "kingdee_material_image"
+MIGRATED_READ_TOOL_NAMES = frozenset(spec.name for spec in MIGRATED_QUERY_SPECS) | frozenset(spec.name for spec in MIGRATED_ENDPOINT_SPECS) | frozenset({"kingdee_view_production_order", MATERIAL_IMAGE_TOOL_NAME})
 EXPERIMENTAL_READ_TOOL_NAMES = frozenset({"kingdee_query_subledger"})
 ALL_READ_TOOL_NAMES = CORE_READ_TOOL_NAMES | MIGRATED_READ_TOOL_NAMES | EXPERIMENTAL_READ_TOOL_NAMES
 ALL_LIGHTWEIGHT_TOOL_NAMES = ALL_READ_TOOL_NAMES | MIGRATED_WRITE_TOOL_NAMES | MIGRATED_OPS_TOOL_NAMES
@@ -657,6 +663,17 @@ def save_schema(*, default_form_id: str = "", required_form: bool = True) -> dic
         props["form_id"] = string_prop("Kingdee form id", required=True)
         required.insert(0, "form_id")
     return object_schema(props, required)
+
+
+def material_image_schema() -> dict[str, Any]:
+    return object_schema(
+        {
+            "action": {"type": "string", "enum": ["upload", "download"]},
+            "material_id": int_prop("物料 FMaterialId，仅允许操作明确指定的物料", minimum=1),
+            "image_base64": string_prop("上传时必填，PNG/JPEG 的纯 Base64 或 data URL", ""),
+        },
+        ["action", "material_id"],
+    )
 
 
 def bill_ids_schema(*, default_form_id: str = "", required_form: bool = True) -> dict[str, Any]:
@@ -807,6 +824,170 @@ def _make_save_handler(client: KingdeeWebAPIClient, op_name: str, default_form_i
     return handler
 
 
+_MATERIAL_IMAGE_WRITE_SCOPES = frozenset({"write", "all", "high", "*"})
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+_JPEG_SIGNATURE = b"\xff\xd8\xff"
+_DATA_URL_PATTERN = re.compile(r"^data:(image/(?:png|jpeg));base64,(.*)$", re.IGNORECASE | re.DOTALL)
+
+
+def _material_image_limit_bytes() -> int:
+    raw = os.getenv("MCP_MATERIAL_IMAGE_MAX_BYTES", "2097152").strip()
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError("MCP_MATERIAL_IMAGE_MAX_BYTES must be an integer") from exc
+    if value < 1:
+        raise ValueError("MCP_MATERIAL_IMAGE_MAX_BYTES must be >= 1")
+    return value
+
+
+def _decode_material_image(image_base64: str, *, enforce_limit: bool) -> dict[str, Any]:
+    raw_value = str(image_base64 or "").strip()
+    if not raw_value:
+        raise ValueError("image_base64 is required for upload")
+
+    declared_mime = ""
+    match = _DATA_URL_PATTERN.fullmatch(raw_value)
+    if match:
+        declared_mime = match.group(1).lower()
+        raw_value = match.group(2).strip()
+    raw_value = "".join(raw_value.split())
+
+    try:
+        image_bytes = base64.b64decode(raw_value, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("image_base64 must be valid Base64") from exc
+
+    if image_bytes.startswith(_PNG_SIGNATURE):
+        mime_type = "image/png"
+        extension = "png"
+    elif image_bytes.startswith(_JPEG_SIGNATURE):
+        mime_type = "image/jpeg"
+        extension = "jpg"
+    else:
+        raise ValueError("material image must be PNG or JPEG")
+    if declared_mime and declared_mime != mime_type:
+        raise ValueError("data URL MIME type does not match image content")
+    if enforce_limit:
+        maximum = _material_image_limit_bytes()
+        if len(image_bytes) > maximum:
+            raise ValueError(f"material image exceeds maximum size of {maximum} bytes")
+
+    return {
+        "image_base64": raw_value,
+        "image_bytes": image_bytes,
+        "mime_type": mime_type,
+        "extension": extension,
+        "byte_size": len(image_bytes),
+        "sha256": hashlib.sha256(image_bytes).hexdigest(),
+    }
+
+
+def _material_image_view_model(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    result = payload.get("Result", payload)
+    if isinstance(result, dict):
+        nested = result.get("Result", result)
+        return nested if isinstance(nested, dict) else {}
+    return {}
+
+
+async def _material_image_record(
+    client: KingdeeWebAPIClient,
+    material_id: int,
+    context: OperatorContext,
+) -> dict[str, Any]:
+    payload = client.query_payload(
+        "BD_Material",
+        "FMaterialId,FNumber,FName,FDocumentStatus",
+        f"FMaterialId = {material_id}",
+        "FMaterialId DESC",
+        0,
+        1,
+    )
+    data = map_query_rows(
+        rows(await client.post("query", payload, context)),
+        ("material_id", "material_number", "material_name", "document_status"),
+    )
+    if not data:
+        raise ValueError(f"material not found: {material_id}")
+    record = data[0]
+    record["material_id"] = int(record["material_id"])
+    record["material_number"] = str(record.get("material_number") or "").strip()
+    record["material_name"] = str(record.get("material_name") or "").strip()
+    record["document_status"] = str(record.get("document_status") or "").strip()
+    return record
+
+
+def _material_image_filename(record: dict[str, Any], extension: str) -> str:
+    source = record.get("material_number") or f"material-{record['material_id']}"
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", str(source)).strip("._")
+    return f"{safe or record['material_id']}.{extension}"
+
+
+def _make_material_image_handler(client: KingdeeWebAPIClient) -> ToolHandler:
+    async def handler(args: dict[str, Any], context: OperatorContext) -> dict[str, Any]:
+        action = str(args.get("action") or "").strip().lower()
+        if action not in {"upload", "download"}:
+            raise ValueError("action must be upload or download")
+        material_id = int(args["material_id"])
+        if action == "upload" and not context.allowed_tools.intersection(_MATERIAL_IMAGE_WRITE_SCOPES):
+            raise PermissionError("material image upload requires write permission")
+        record = await _material_image_record(client, material_id, context)
+
+        if action == "download":
+            view_model = _material_image_view_model(await client.view("BD_Material", str(material_id), context))
+            image_value = str(view_model.get("Image") or "").strip()
+            if not image_value:
+                raise FileNotFoundError(f"material has no database image: {material_id}")
+            image = _decode_material_image(image_value, enforce_limit=False)
+            return {
+                "success": True,
+                "action": action,
+                **record,
+                "storage_type": "database",
+                "mime_type": image["mime_type"],
+                "byte_size": image["byte_size"],
+                "sha256": image["sha256"],
+                "suggested_filename": _material_image_filename(record, image["extension"]),
+                "image_base64": image["image_base64"],
+            }
+
+        if record["document_status"] != "A":
+            raise PermissionError("material image upload is allowed only for an unreviewed material with DocumentStatus A")
+        image = _decode_material_image(args.get("image_base64") or "", enforce_limit=True)
+        save_data = {
+            "Model": {"FMaterialId": material_id, "FIMAGE1": image["image_base64"]},
+            "NeedUpDateFields": ["FIMAGE1"],
+            "IsDeleteEntry": "false",
+            "IsVerifyBaseDataField": "false",
+            "IsAutoSubmitAndAudit": "false",
+            "ValidateRepeatJson": "false",
+        }
+        save_status = _result_status(await client.raw("save", "BD_Material", save_data, context), "save")
+        if not save_status.get("success"):
+            raise RuntimeError(f"Kingdee material image save failed: {save_status.get('errors') or save_status.get('response_status')}")
+
+        view_model = _material_image_view_model(await client.view("BD_Material", str(material_id), context))
+        saved_image = _decode_material_image(str(view_model.get("Image") or ""), enforce_limit=False)
+        verified = saved_image["sha256"] == image["sha256"] and saved_image["byte_size"] == image["byte_size"]
+        if not verified:
+            raise RuntimeError("Kingdee material image round-trip verification failed")
+        return {
+            "success": True,
+            "action": action,
+            **record,
+            "storage_type": "database",
+            "mime_type": image["mime_type"],
+            "byte_size": image["byte_size"],
+            "sha256": image["sha256"],
+            "verified": True,
+        }
+
+    return handler
+
+
 def _make_ids_handler(client: KingdeeWebAPIClient, ep_key: str, default_form_id: str = "") -> ToolHandler:
     async def handler(args: dict[str, Any], context: OperatorContext) -> dict[str, Any]:
         form_id = _selected_form_id(args, default_form_id)
@@ -936,6 +1117,14 @@ def build_migrated_lightweight_tools(client: KingdeeWebAPIClient, *, existing: d
             "View a production order by FID.",
             object_schema({"bill_id": string_prop("Production order FID", required=True), "mode": {"type": "string", "enum": ["summary", "full"], "default": "summary"}}, ["bill_id"]),
             view_production,
+        )
+
+    if MATERIAL_IMAGE_TOOL_NAME not in existing_names:
+        tools[MATERIAL_IMAGE_TOOL_NAME] = ToolDefinition(
+            MATERIAL_IMAGE_TOOL_NAME,
+            "上传或下载物料数据库图片；上传仅允许未审核物料并要求 write 权限。",
+            material_image_schema(),
+            _make_material_image_handler(client),
         )
 
     write_defs: dict[str, ToolDefinition] = {
