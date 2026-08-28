@@ -831,7 +831,7 @@ _DATA_URL_PATTERN = re.compile(r"^data:(image/(?:png|jpeg));base64,(.*)$", re.IG
 
 
 def _material_image_limit_bytes() -> int:
-    raw = os.getenv("MCP_MATERIAL_IMAGE_MAX_BYTES", "2097152").strip()
+    raw = os.getenv("MCP_MATERIAL_IMAGE_MAX_BYTES", "5242880").strip()
     try:
         value = int(raw)
     except ValueError as exc:

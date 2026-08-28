@@ -791,3 +791,19 @@ def test_stdio_content_length_framing_round_trip():
     _write_stdio_message(stream, payload)
     stream.seek(0)
     assert _read_stdio_message(stream) == payload
+
+
+def test_image_tool_result_serializes_base64_only_once():
+    from kingdee_mcp.mcp_lite import tool_result
+
+    image_base64 = "aGVsbG8="
+    result = tool_result(
+        {
+            "success": True,
+            "mime_type": "image/png",
+            "sha256": "example-sha256",
+            "image_base64": image_base64,
+        }
+    )
+
+    assert result["content"][1] == {"type": "image", "data": image_base64, "mimeType": "image/png"}

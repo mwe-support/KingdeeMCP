@@ -316,6 +316,9 @@ the Open Platform specified-user-login list.
 - Never upload an image to an audited material. `kingdee_material_image` upload
   must reject every status except `DocumentStatus=A`, must require a write-level
   scope, and must verify the saved bytes by size and SHA-256 before success.
+- Serialize large image transfers through the dedicated material-image
+  semaphore. Keep Base64 out of `structuredContent`; return it once as an MCP
+  `image` content block so HTTP responses do not duplicate large payloads.
 - Material image tests may use only purpose-created, unreviewed test materials.
   The tool must not submit, audit, unaudit, delete, or otherwise advance their
   business state.

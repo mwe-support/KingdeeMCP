@@ -27,6 +27,7 @@ from .light_tools import (
     EXPERIMENTAL_READ_TOOL_NAMES,
     MIGRATED_OPS_TOOL_NAMES,
     MIGRATED_WRITE_TOOL_NAMES,
+    MATERIAL_IMAGE_TOOL_NAME,
     ToolDefinition,
     build_core_read_tools,
 )
@@ -144,6 +145,9 @@ class KingdeeLiteApplication:
         self._runner = AsyncLoopRunner()
         self.access_logger = access_logger or JsonAccessLogger(load_access_log_config())
         self._tool_semaphore = threading.BoundedSemaphore(max(1, int(os.getenv("MCP_MAX_CONCURRENT_TOOLS", "8") or "8")))
+        self._material_image_semaphore = threading.BoundedSemaphore(
+            max(1, int(os.getenv("MCP_MAX_CONCURRENT_MATERIAL_IMAGE_TRANSFERS", "1") or "1"))
+        )
 
     def close(self) -> None:
         self._runner.close()
@@ -208,12 +212,24 @@ class KingdeeLiteApplication:
         acquired = self._tool_semaphore.acquire(timeout=float(os.getenv("MCP_TOOL_QUEUE_TIMEOUT_SECONDS", "3") or "3"))
         if not acquired:
             return tool_result({"ok": False, "error": {"type": "server_busy", "message": "Server is busy; retry later"}}, is_error=True)
+        image_acquired = False
         try:
+            if name == MATERIAL_IMAGE_TOOL_NAME:
+                image_acquired = self._material_image_semaphore.acquire(
+                    timeout=float(os.getenv("MCP_MATERIAL_IMAGE_QUEUE_TIMEOUT_SECONDS", "15") or "15")
+                )
+                if not image_acquired:
+                    return tool_result(
+                        {"ok": False, "error": {"type": "server_busy", "message": "Material image transfer is busy; retry later"}},
+                        is_error=True,
+                    )
             payload = self._runner.run(tool.handler(coerced, context), timeout=float(os.getenv("MCP_TOOL_CALL_TIMEOUT_SECONDS", "120") or "120"))
             return tool_result(payload)
         except Exception as exc:
             return tool_result({"ok": False, "error": {"type": type(exc).__name__, "message": str(exc)[:500]}}, is_error=True)
         finally:
+            if image_acquired:
+                self._material_image_semaphore.release()
             self._tool_semaphore.release()
 
 
@@ -288,6 +304,21 @@ def coerce_value(name: str, value: Any, prop: dict[str, Any]) -> Any:
 
 
 def tool_result(payload: dict[str, Any], *, is_error: bool = False) -> dict[str, Any]:
+    image_base64 = payload.get("image_base64")
+    if not is_error and isinstance(image_base64, str) and image_base64:
+        metadata = {key: value for key, value in payload.items() if key != "image_base64"}
+        return {
+            "content": [
+                {"type": "text", "text": json.dumps(metadata, ensure_ascii=False, indent=2)},
+                {
+                    "type": "image",
+                    "data": image_base64,
+                    "mimeType": str(metadata.get("mime_type") or "image/png"),
+                },
+            ],
+            "structuredContent": metadata,
+            "isError": False,
+        }
     return {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False, indent=2)}], "structuredContent": payload, "isError": is_error}
 
 

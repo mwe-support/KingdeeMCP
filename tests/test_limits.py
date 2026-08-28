@@ -45,3 +45,24 @@ def test_async_loop_runner_cancels_timed_out_coroutine():
         assert cancelled.wait(timeout=1)
     finally:
         runner.close()
+
+
+def test_material_image_call_returns_server_busy_when_image_slot_is_full(tmp_path, monkeypatch):
+    monkeypatch.setenv("MCP_MAX_CONCURRENT_MATERIAL_IMAGE_TRANSFERS", "1")
+    monkeypatch.setenv("MCP_MATERIAL_IMAGE_QUEUE_TIMEOUT_SECONDS", "0.01")
+    app, _fake, token = make_app(tmp_path, allowed_tools=["write"])
+    context = app.context_from_headers({"Authorization": f"Bearer {token}"})
+
+    assert app._material_image_semaphore.acquire(timeout=0.01)
+    try:
+        result = app.call_tool(
+            "kingdee_material_image",
+            {
+                "action": "download",
+                "material_id": 13007761,
+            },
+            context,
+        )
+    finally:
+        app._material_image_semaphore.release()
+        app.close()

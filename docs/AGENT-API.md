@@ -39,7 +39,7 @@ HTTP production maps callers from `MCP_TOKEN_CONFIG`; do not use one global `KIN
 
 ## Material Image Contract
 
-`kingdee_material_image` uses Kingdee material form `BD_Material`. Upload writes the database image field `FIMAGE1`; verification and download read the `Image` value returned by the View API. Accepted content is PNG or JPEG. The server validates file signatures, enforces `MCP_MATERIAL_IMAGE_MAX_BYTES` on upload, and verifies the saved image by decoded byte size and SHA-256 before reporting success.
+`kingdee_material_image` uses Kingdee material form `BD_Material`. Upload writes the database image field `FIMAGE1`; verification and download read the `Image` value returned by the View API. Accepted content is PNG or JPEG. The server validates file signatures, enforces `MCP_MATERIAL_IMAGE_MAX_BYTES` on upload, and verifies the saved image by decoded byte size and SHA-256 before reporting success. Download returns Base64 exactly once as a standard MCP `image` content block; `structuredContent` contains metadata only.
 
 The tool does not use the file-server image field, does not change `ImgStorageType`, and never submits, audits, unaudits, or deletes a material. Upload is rejected unless the current material status is exactly `A` (unreviewed). Callers must use a purpose-created test material for integration tests and must not use audited production material.
 

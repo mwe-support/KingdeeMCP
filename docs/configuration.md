@@ -82,7 +82,9 @@ Native `type: http` direct connections are an experimental fallback only. Use th
 | `MCP_MAX_CONCURRENT_KINGDEE_REQUESTS` | no | `4` | Maximum concurrent outbound Kingdee WebAPI requests. Protects Kingdee and this host. |
 | `MCP_TOOL_QUEUE_TIMEOUT_SECONDS` | no | `15` | Wait time for a tool slot before returning `server_busy`. Use 15 seconds for WorkBuddy batch calls behind Cloudflare Access. |
 | `MCP_TOOL_CALL_TIMEOUT_SECONDS` | no | `120` | Wall-clock timeout for one tool call. |
-| `MCP_MATERIAL_IMAGE_MAX_BYTES` | no | `2097152` | Maximum decoded PNG/JPEG size accepted by `kingdee_material_image` upload. The 2 MiB default bounds Base64 request memory. |
+| `MCP_MATERIAL_IMAGE_MAX_BYTES` | no | `5242880` | Maximum decoded PNG/JPEG size accepted by `kingdee_material_image` upload. The 5 MiB default bounds Base64 request memory. |
+| `MCP_MAX_CONCURRENT_MATERIAL_IMAGE_TRANSFERS` | no | `1` | Dedicated concurrent material-image transfers. Keep `1` on the current 512 MiB host. |
+| `MCP_MATERIAL_IMAGE_QUEUE_TIMEOUT_SECONDS` | no | `15` | Wait time for the dedicated material-image slot before returning `server_busy`. |
 | `MCP_HTTP_REQUEST_QUEUE_SIZE` | no | `128` | TCP accept backlog for the local `ThreadingHTTPServer`. |
 
 ## Structured Access Logging

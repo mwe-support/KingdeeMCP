@@ -159,6 +159,19 @@ async def test_upload_rejects_invalid_image() -> None:
 
 
 @pytest.mark.asyncio
+async def test_upload_default_limit_allows_image_larger_than_two_mib(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MCP_MATERIAL_IMAGE_MAX_BYTES", raising=False)
+    image_bytes = b"\x89PNG\r\n\x1a\n" + (b"x" * (2 * 1024 * 1024))
+    image_base64 = base64.b64encode(image_bytes).decode("ascii")
+    client = FakeMaterialImageClient(image_base64="")
+
+    result = await handler(client)(image_args("upload", image_base64), context("write"))
+
+    assert result["verified"] is True
+    assert result["byte_size"] == len(image_bytes)
+
+
+@pytest.mark.asyncio
 async def test_upload_rejects_image_above_configured_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     client = FakeMaterialImageClient()
     monkeypatch.setenv("MCP_MATERIAL_IMAGE_MAX_BYTES", "8")
