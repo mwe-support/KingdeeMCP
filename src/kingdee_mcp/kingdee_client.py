@@ -19,6 +19,7 @@ _EP = {
     "save": "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Save.common.kdsvc",
     "submit": "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Submit.common.kdsvc",
     "audit": "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Audit.common.kdsvc",
+    "workflow_audit": "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.WorkflowAudit.common.kdsvc",
     "unaudit": "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.UnAudit.common.kdsvc",
     "delete": "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Delete.common.kdsvc",
     "push": "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Push.common.kdsvc",
@@ -65,6 +66,9 @@ class KingdeeWebAPIClient:
 
     async def ensure_session(self, context: OperatorContext) -> str:
         return await self._session_manager.get_session(context.kingdee_username)
+
+    async def current_user_id(self, context: OperatorContext) -> int:
+        return await self._session_manager.get_user_id(context.kingdee_username)
 
     async def refresh_session(self, context: OperatorContext) -> str:
         return await self._session_manager.refresh_session(context.kingdee_username)
@@ -168,8 +172,37 @@ class KingdeeWebAPIClient:
     async def metadata(self, form_id: str, context: OperatorContext) -> Any:
         return await self.post("metadata", {"FormId": form_id}, context)
 
+    async def workflow_audit(self, payload: dict[str, Any], context: OperatorContext) -> Any:
+        if payload.get("UserId") != await self.current_user_id(context):
+            raise PermissionError("Workflow approver must be the authenticated Kingdee user")
+        async with self._semaphore():
+            async with httpx.AsyncClient(timeout=self.timeout, proxy=None,
+                                         transport=httpx.AsyncHTTPTransport(http1=True)) as client:
+                cookie_header = await self.cookie_header(context)
+                # A response timeout may follow a committed transition: never resend this write.
+                response = await client.post(self.url("workflow_audit"),
+                    json={"data": json.dumps(payload, ensure_ascii=False)},
+                    headers={"Cookie": cookie_header})
+                response.raise_for_status()
+                return response.json()
+
+
+def raise_business_error(result: Any) -> None:
+    if isinstance(result, list):
+        for item in result:
+            if isinstance(item, (list, dict)):
+                raise_business_error(item)
+    elif isinstance(result, dict):
+        status = result.get("ResponseStatus")
+        if isinstance(status, dict) and status.get("IsSuccess") is False:
+            errors = status.get("Errors") or [{"Message": "Kingdee business operation failed"}]
+            raise RuntimeError(json.dumps(errors, ensure_ascii=False)[:500])
+        if "Result" in result:
+            raise_business_error(result["Result"])
+
 
 def rows(result: Any) -> list[Any]:
+    raise_business_error(result)
     if isinstance(result, list):
         return result
     if isinstance(result, dict):

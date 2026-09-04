@@ -24,6 +24,7 @@ class KingdeeSessionEntry:
     cookie_header: str
     created_at: float
     last_used_at: float
+    user_id: int = 0
 
 
 class KingdeeSessionManager:
@@ -73,6 +74,12 @@ class KingdeeSessionManager:
 
     async def get_cookie_header(self, kingdee_username: str) -> str:
         return (await self._get_entry(self._key(kingdee_username))).cookie_header
+
+    async def get_user_id(self, kingdee_username: str) -> int:
+        user_id = (await self._get_entry(self._key(kingdee_username))).user_id
+        if user_id <= 0:
+            raise PermissionError("Login response did not include an authenticated Kingdee UserId")
+        return user_id
 
     async def refresh_session(self, kingdee_username: str) -> str:
         key = self._key(kingdee_username)
@@ -145,6 +152,7 @@ class KingdeeSessionManager:
                 cookie_header=cookie_header,
                 created_at=now,
                 last_used_at=now,
+                user_id=int((data.get("Context") or {}).get("UserId") or 0),
             )
             self._sessions[key] = entry
             return entry

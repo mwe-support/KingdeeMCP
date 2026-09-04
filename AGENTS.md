@@ -309,6 +309,13 @@ the Open Platform specified-user-login list.
   Kingdee environment.
 - Treat save, submit, audit, unaudit, delete, and push operations as high-risk
   surfaces.
+- Workflow approval must use official DynamicFormService.WorkflowAudit, never
+  Audit/UnAudit as a substitute. Bind UserId to LoginByAppSecret Context.UserId.
+- Workflow task tools must filter by that authenticated user, require an exact
+  receiver-task id before writing, and check the task is still pending.
+- Never automatically retry a workflow write. Read task state after ambiguous
+  results; changing a bill status is not evidence of workflow completion.
+- Workflow tests may advance only explicitly authorized purpose-created samples.
 - Material image integration uses `BD_Material`: upload writes `FIMAGE1`, while
   View/download reads `Image`. Keep the first version on database image storage
   (`ImgStorageType=A`) and accept only PNG/JPEG within

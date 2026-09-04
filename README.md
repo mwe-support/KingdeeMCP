@@ -12,6 +12,16 @@ KingdeeMCP 当前生产实现是一个轻量 MCP Gateway，用于让 MCP 客户�
 - 金蝶 WebAPI 仍使用共享 `AppID/AppSecret` + 指定金蝶用户 `LoginByAppSecret` 登录。
 - 工具已统一迁入 lightweight registry。默认 `read`/`core` token 只暴露 14 个核心只读工具；`full-read`/`read-all` 暴露全部只读工具（包含实验性工具）；`write` 暴露全部只读工具（包含 `kingdee_query_subledger`）和写入工具；`ops` 只暴露轻量运维占位工具；`all`/`high`/`*` 暴露稳定完整目录，但不自动包含实验性工具。
 
+## 工作流审批
+
+真实工作流使用 `kingdee_workflow_tasks` → `kingdee_workflow_task` → `kingdee_workflow_approve`。
+审批必须提供本人待办的 `task_id`，通过官方 WorkflowAudit 处理节点并提交审批意见，
+不再映射到传统 Audit/UnAudit。UserId 从登录响应解析，客户端不能指定其他审批人。
+默认 read/core 仍为 14 个工具；完整只读和 write 用户可查询本人任务。
+升级后请刷新客户端工具目录；旧的仅传 form_id/bill_id 的工作流调用会被拒绝。
+网络超时后先查任务状态，不自动重试写操作。
+详见 [工作流工具链](docs/workflow.md) 和 [调用示例](examples/workflow-approve.md)。
+
 ## 架构
 
 ```text

@@ -304,6 +304,12 @@ def coerce_value(name: str, value: Any, prop: dict[str, Any]) -> Any:
 
 
 def tool_result(payload: dict[str, Any], *, is_error: bool = False) -> dict[str, Any]:
+    is_error = is_error or payload.get("success") is False or payload.get("ok") is False
+    result = payload.get("Result")
+    if isinstance(result, dict):
+        status = result.get("ResponseStatus")
+        if isinstance(status, dict) and status.get("IsSuccess") is False:
+            is_error = True
     image_base64 = payload.get("image_base64")
     if not is_error and isinstance(image_base64, str) and image_base64:
         metadata = {key: value for key, value in payload.items() if key != "image_base64"}
@@ -396,7 +402,7 @@ def access_response_status(
         return "success", None
     structured = result.get("structuredContent")
     error = structured.get("error") if isinstance(structured, dict) else None
-    error_type = str(error.get("type") or "tool_error") if isinstance(error, dict) else "tool_error"
+    error_type = str(error.get("type") or "tool_error") if isinstance(error, dict) else "kingdee_business_error"
     return "error", error_type
 
 

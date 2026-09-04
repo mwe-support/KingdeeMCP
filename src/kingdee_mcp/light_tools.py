@@ -10,6 +10,7 @@ from typing import Any, Awaitable, Callable
 
 from .auth import OperatorContext
 from .kingdee_client import KingdeeWebAPIClient, metadata_summary, rows, simplify_view_result
+from .workflow import READ_TOOL_NAMES as WORKFLOW_READ_TOOL_NAMES, WorkflowService
 
 ToolHandler = Callable[[dict[str, Any], OperatorContext], Awaitable[dict[str, Any]]]
 
@@ -604,6 +605,7 @@ MIGRATED_OPS_TOOL_NAMES = frozenset(
 
 MATERIAL_IMAGE_TOOL_NAME = "kingdee_material_image"
 MIGRATED_READ_TOOL_NAMES = frozenset(spec.name for spec in MIGRATED_QUERY_SPECS) | frozenset(spec.name for spec in MIGRATED_ENDPOINT_SPECS) | frozenset({"kingdee_view_production_order", MATERIAL_IMAGE_TOOL_NAME})
+MIGRATED_READ_TOOL_NAMES |= WORKFLOW_READ_TOOL_NAMES
 EXPERIMENTAL_READ_TOOL_NAMES = frozenset({"kingdee_query_subledger"})
 ALL_READ_TOOL_NAMES = CORE_READ_TOOL_NAMES | MIGRATED_READ_TOOL_NAMES | EXPERIMENTAL_READ_TOOL_NAMES
 ALL_LIGHTWEIGHT_TOOL_NAMES = ALL_READ_TOOL_NAMES | MIGRATED_WRITE_TOOL_NAMES | MIGRATED_OPS_TOOL_NAMES
@@ -709,13 +711,24 @@ def push_schema(*, default_form_id: str = "", default_target_form_id: str = "", 
 def workflow_action_schema() -> dict[str, Any]:
     return object_schema(
         {
-            "form_id": string_prop("Kingdee form id", required=True),
-            "bill_id": string_prop("Bill FID", required=True),
+            "task_id": string_prop("本人工作流待办 task_id，必须先查询并核对任务", required=True),
+            "form_id": string_prop("可选：校验关联表单编码", ""),
+            "bill_id": string_prop("可选：校验单据 FID 并按内码提交", ""),
             "action": {"type": "string", "enum": ["approve", "reject"], "default": "approve"},
-            "opinion": string_prop("Approval opinion", ""),
+            "opinion": string_prop("实际提交到金蝶工作流的审批意见，最多1000字符", ""),
         },
-        ["form_id", "bill_id"],
+        ["task_id"],
     )
+
+
+def workflow_tasks_schema() -> dict[str, Any]:
+    return object_schema({
+        "form_id": string_prop("可选：关联单据表单编码", ""),
+        "bill_number": string_prop("可选：精确单据编码", ""),
+        "status": {"type": "string", "enum": ["pending", "all", "history"], "default": "pending"},
+        "start_row": int_prop("分页起始行", 0, minimum=0),
+        "limit": int_prop("返回条数", 20, minimum=1, maximum=100),
+    })
 
 
 def _selected_form_id(args: dict[str, Any], default_form_id: str = "") -> str:
@@ -1071,17 +1084,6 @@ def _make_push_and_audit_handler(client: KingdeeWebAPIClient) -> ToolHandler:
     return handler
 
 
-def _workflow_approve_handler(client: KingdeeWebAPIClient) -> ToolHandler:
-    async def handler(args: dict[str, Any], context: OperatorContext) -> dict[str, Any]:
-        ep_key = "audit" if args["action"] == "approve" else "unaudit"
-        status = _result_status(await client.raw(ep_key, args["form_id"], {"Ids": args["bill_id"]}, context), ep_key)
-        status["action"] = args["action"]
-        status["opinion"] = args.get("opinion") or ""
-        return status
-
-    return handler
-
-
 def _ops_stub_handler(tool_name: str) -> ToolHandler:
     async def handler(args: dict[str, Any], context: OperatorContext) -> dict[str, Any]:
         return {
@@ -1127,6 +1129,14 @@ def build_migrated_lightweight_tools(client: KingdeeWebAPIClient, *, existing: d
             _make_material_image_handler(client),
         )
 
+    workflow = WorkflowService(client)
+    tools["kingdee_workflow_tasks"] = ToolDefinition(
+        "kingdee_workflow_tasks", "查询当前认证用户的真实工作流任务；默认仅返回可处理待办。",
+        workflow_tasks_schema(), workflow.list_tasks)
+    tools["kingdee_workflow_task"] = ToolDefinition(
+        "kingdee_workflow_task", "读取本人工作流任务状态、关联单据和已持久化审批意见。",
+        object_schema({"task_id": string_prop("本人工作流 task_id", required=True)}, ["task_id"]),
+        workflow.task_detail)
     write_defs: dict[str, ToolDefinition] = {
         "kingdee_save_bill": ToolDefinition("kingdee_save_bill", "Save a Kingdee bill model.", save_schema(), _make_save_handler(client, "kingdee_save_bill")),
         "kingdee_submit_bills": ToolDefinition("kingdee_submit_bills", "Submit Kingdee bills.", bill_ids_schema(), _make_ids_handler(client, "submit")),
@@ -1136,7 +1146,7 @@ def build_migrated_lightweight_tools(client: KingdeeWebAPIClient, *, existing: d
         "kingdee_push_bill": ToolDefinition("kingdee_push_bill", "Push source bills to a target form.", push_schema(), _make_push_handler(client)),
         "kingdee_create_and_audit": ToolDefinition("kingdee_create_and_audit", "Save, submit, and audit one bill.", save_schema(), _make_create_and_audit_handler(client)),
         "kingdee_push_and_audit": ToolDefinition("kingdee_push_and_audit", "Push source bills and audit generated target bills when ids are returned.", push_schema(), _make_push_and_audit_handler(client)),
-        "kingdee_workflow_approve": ToolDefinition("kingdee_workflow_approve", "Approve or reject a bill through the lightweight audit/unaudit mapping.", workflow_action_schema(), _workflow_approve_handler(client)),
+        "kingdee_workflow_approve": ToolDefinition("kingdee_workflow_approve", "通过官方 WorkflowAudit 审批本人待办；要求明确 task_id，写请求不自动重试，返回任务及意见回读结果。", workflow_action_schema(), workflow.approve),
         "kingdee_save_asset": ToolDefinition("kingdee_save_asset", "Save a fixed asset card.", save_schema(default_form_id="FA_FAGet", required_form=False), _make_save_handler(client, "kingdee_save_asset", "FA_FAGet")),
         "kingdee_push_stock_transfer": ToolDefinition("kingdee_push_stock_transfer", "Push stock transfer applications to direct transfer bills.", push_schema(default_form_id="STK_TransferApply", default_target_form_id="STK_TransferDirect", required_form=False), _make_push_handler(client, "STK_TransferApply", "STK_TransferDirect")),
         "kingdee_save_cost_adjustment": ToolDefinition("kingdee_save_cost_adjustment", "Save a cost adjustment bill.", save_schema(default_form_id="STK_CostAdjust", required_form=False), _make_save_handler(client, "kingdee_save_cost_adjustment", "STK_CostAdjust")),

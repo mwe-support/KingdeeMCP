@@ -37,6 +37,14 @@ HTTP production maps callers from `MCP_TOKEN_CONFIG`; do not use one global `KIN
 | `kingdee_query_workflow_status` | `form_id`, `bill_id` | View status for one bill. |
 | `kingdee_material_image` | `action=upload|download`, `material_id`; upload also requires `image_base64` | Database image upload/download for material master data. Upload requires write permission and an unreviewed `DocumentStatus=A` material. |
 
+## Workflow Tools
+
+Use `kingdee_workflow_tasks` for the authenticated user's real pending inbox,
+`kingdee_workflow_task(task_id)` for task details, and
+`kingdee_workflow_approve(task_id, action, opinion)` for official WorkflowAudit.
+Task ownership is derived from login UserId. Writes are not automatically retried.
+See [workflow.md](workflow.md) for scopes, compatibility changes, and readback semantics.
+
 ## Material Image Contract
 
 `kingdee_material_image` uses Kingdee material form `BD_Material`. Upload writes the database image field `FIMAGE1`; verification and download read the `Image` value returned by the View API. Accepted content is PNG or JPEG. The server validates file signatures, enforces `MCP_MATERIAL_IMAGE_MAX_BYTES` on upload, and verifies the saved image by decoded byte size and SHA-256 before reporting success. Download returns Base64 exactly once as a standard MCP `image` content block; `structuredContent` contains metadata only.
@@ -63,7 +71,7 @@ It does not call `GetSysReportData` for `GL_RPT_SubLedger`. The current environm
 - `limit` defaults to 20 where supported.
 - Query limits are capped by each tool schema, usually at 100.
 - `kingdee_query_inventory` defaults to `FBaseQty>0`.
-- Write, audit, delete, unaudit, push, and SQL probing calls should return unknown/disallowed in production.
+- Write/audit/delete/unaudit/push require matching tool authorization; SQL probing remains unavailable.
 - `kingdee_query_subledger` caps voucher entries at 100 rows and balance rows at 100 per boundary period to bound MCP response size.
 
 ## Error Handling
