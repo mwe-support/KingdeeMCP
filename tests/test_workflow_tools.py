@@ -74,6 +74,29 @@ async def test_workflow_chain_uses_authenticated_user_and_verifies_opinion():
 
 
 @pytest.mark.asyncio
+async def test_workflow_bill_id_accepts_document_view_billno():
+    class OutstockClient(WorkflowClient):
+        async def post(self, key, payload, context):
+            data = await super().post(key, payload, context)
+            for row in data:
+                row[3] = "XSCKD009756"
+                row[4] = "SAL_OUTSTOCK"
+            return data
+
+        async def view(self, form_id, bill_id, context):
+            assert form_id == "SAL_OUTSTOCK"
+            assert bill_id == "121237"
+            return {"Result": {"Result": {"Id": 121237, "BillNo": "XSCKD009756"}}}
+
+    client = OutstockClient()
+    result = await build_core_read_tools(client)["kingdee_workflow_approve"].handler(
+        {"task_id": TASK, "bill_id": "121237", "opinion": "verified test"}, context())
+    assert result["verified"] is True
+    assert client.calls[0]["Ids"] == "121237"
+    assert "Numbers" not in client.calls[0]
+
+
+@pytest.mark.asyncio
 async def test_foreign_task_and_malformed_task_never_write():
     client = WorkflowClient()
     registry = build_core_read_tools(client)
@@ -162,12 +185,32 @@ async def test_failed_or_ambiguous_write_is_not_reported_verified():
     class FailedClient(WorkflowClient):
         async def workflow_audit(self, payload, context):
             self.calls.append(payload)
-            return {"Result": {"ResponseStatus": {"IsSuccess": False, "Errors": [{"Message": "denied"}]}}}
+            return {"Result": {
+                "ResponseStatus": {"IsSuccess": False, "Errors": []},
+                "OperationResults": json.dumps({"ErrorCode": 500, "Message": "denied"}),
+            }}
 
     client = FailedClient()
     result = await build_core_read_tools(client)["kingdee_workflow_approve"].handler({"task_id": TASK}, context())
     assert result["success"] is False
+    assert result["errors"] == {"ErrorCode": 500, "Message": "denied"}
+    assert result["operation_results"] == {"ErrorCode": 500, "Message": "denied"}
     assert tool_result(result)["isError"] is True
+    assert len(client.calls) == 1
+
+    class UnexpectedClient(WorkflowClient):
+        async def workflow_audit(self, payload, context):
+            self.calls.append(payload)
+            return {"Result": {
+                "ResponseStatus": "",
+                "OperationResults": json.dumps({"Result": "unknown"}),
+            }}
+
+    client = UnexpectedClient()
+    result = await build_core_read_tools(client)["kingdee_workflow_approve"].handler({"task_id": TASK}, context())
+    assert result["outcome_unknown"] is True
+    assert result["operation_results"] == {"Result": "unknown"}
+    assert result["error"]["type"] == "workflow_outcome_unknown"
     assert len(client.calls) == 1
 
     class TimeoutClient(WorkflowClient):

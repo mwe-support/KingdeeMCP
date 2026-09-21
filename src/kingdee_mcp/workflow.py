@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from typing import Any
 
@@ -45,6 +46,28 @@ def _quote(value: str) -> str:
     if len(value) > 128 or any(ord(char) < 32 for char in value):
         raise ValueError("Invalid workflow filter value")
     return "'" + value.replace("'", "''") + "'"
+
+
+def _operation_results(response: Any) -> Any:
+    result = response.get("Result") if isinstance(response, dict) else None
+    if not isinstance(result, dict) or "OperationResults" not in result:
+        return None
+    value = result["OperationResults"]
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            value = json.loads(text)
+        except json.JSONDecodeError:
+            return text[:6000]
+    try:
+        encoded = json.dumps(value, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        return str(value)[:6000]
+    if len(encoded) <= 6000:
+        return value
+    return {"truncated": True, "preview": encoded[:6000]}
 
 
 def _pending(task: dict[str, Any]) -> bool:
@@ -150,7 +173,7 @@ class WorkflowService:
                 viewed = await self.client.view(before["form_id"], str(args["bill_id"]), context)
                 raise_business_error(viewed)
                 model = viewed.get("Result", {}).get("Result", {})
-                if str(model.get("Number") or model.get("FBillNo") or "") != before["bill_number"]:
+                if str(model.get("Number") or model.get("BillNo") or model.get("FBillNo") or "") != before["bill_number"]:
                     raise ValueError("bill_id does not match the task")
                 payload.pop("Numbers")
                 payload["Ids"] = str(args["bill_id"])
@@ -163,13 +186,17 @@ class WorkflowService:
                         "task_id": task_id, "error": {"type": "workflow_outcome_unknown",
                         "message": f"{type(exc).__name__}: read task state before any further write"}}
             status = response.get("Result", {}).get("ResponseStatus") if isinstance(response, dict) else None
+            operation_results = _operation_results(response)
             if not isinstance(status, dict) or type(status.get("IsSuccess")) is not bool:
                 return {"success": False, "outcome_unknown": True, "retry_write": False,
                         "task_id": task_id, "error": {"type": "workflow_outcome_unknown",
-                        "message": "Unexpected WorkflowAudit response; read task state before any further write"}}
+                        "message": "Unexpected WorkflowAudit response; read task state before any further write"},
+                        "response_status": status, "operation_results": operation_results}
             if status["IsSuccess"] is False:
                 return {"success": False, "op": "workflow_audit", "task_id": task_id,
-                        "response_status": status, "errors": status.get("Errors", []), "retry_write": False}
+                        "response_status": status,
+                        "errors": status.get("Errors") or operation_results or [],
+                        "operation_results": operation_results, "retry_write": False}
             after = None
             verification_error = None
             for attempt in range(3):
@@ -188,4 +215,4 @@ class WorkflowService:
                     "before": before, "after": after, "verified": verified,
                     "verification_status": "verified" if verified else "pending",
                     "verification_error": verification_error, "retry_write": False,
-                    "response_status": status}
+                    "response_status": status, "operation_results": operation_results}
