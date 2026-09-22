@@ -181,7 +181,7 @@ class KingdeeWebAPIClient:
                 cookie_header = await self.cookie_header(context)
                 # A response timeout may follow a committed transition: never resend this write.
                 response = await client.post(self.url("workflow_audit"),
-                    json={"data": json.dumps(payload, ensure_ascii=False)},
+                    data={"data": json.dumps(payload, ensure_ascii=False)},
                     headers={"Cookie": cookie_header})
                 response.raise_for_status()
                 return response.json()

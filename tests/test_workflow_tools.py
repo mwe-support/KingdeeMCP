@@ -1,5 +1,6 @@
 import asyncio
 import json
+from urllib.parse import parse_qs
 from unittest.mock import AsyncMock
 
 import httpx
@@ -147,8 +148,13 @@ async def test_workflow_write_is_not_retried_on_session_expiration(monkeypatch):
         await client.workflow_audit({"FormId": "BD_MATERIAL", "Numbers": ["TEST_MATERIAL"], "UserId": 103412, "ApprovalType": 1, "Disposition": "test"}, context())
     assert len(seen) == 1
     assert seen[0].url.path.endswith("DynamicFormService.WorkflowAudit.common.kdsvc")
-    body = json.loads(json.loads(seen[0].content)["data"])
-    assert body["Disposition"] == "test"
+    assert seen[0].headers["Content-Type"].startswith("application/x-www-form-urlencoded")
+    form = parse_qs(seen[0].content.decode("utf-8"))
+    body = json.loads(form["data"][0])
+    assert body == {
+        "FormId": "BD_MATERIAL", "Numbers": ["TEST_MATERIAL"], "UserId": 103412,
+        "ApprovalType": 1, "Disposition": "test",
+    }
 
 
 @pytest.mark.asyncio
