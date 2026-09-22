@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 import json
 from typing import Any
+from uuid import uuid4
 
 import httpx
 
@@ -179,10 +181,18 @@ class KingdeeWebAPIClient:
             async with httpx.AsyncClient(timeout=self.timeout, proxy=None,
                                          transport=httpx.AsyncHTTPTransport(http1=True)) as client:
                 cookie_header = await self.cookie_header(context)
+                business_json = json.dumps(payload, ensure_ascii=False)
+                envelope = {
+                    "format": 1,
+                    "useragent": "ApiClient",
+                    "rid": uuid4().hex,
+                    "parameters": json.dumps([business_json], ensure_ascii=False),
+                    "timestamp": datetime.now().astimezone().isoformat(timespec="seconds"),
+                    "v": "1.0",
+                }
                 # A response timeout may follow a committed transition: never resend this write.
                 response = await client.post(self.url("workflow_audit"),
-                    data={"data": json.dumps(payload, ensure_ascii=False)},
-                    headers={"Cookie": cookie_header})
+                    json=envelope, headers={"Cookie": cookie_header})
                 response.raise_for_status()
                 return response.json()
 

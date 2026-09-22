@@ -1,6 +1,5 @@
 import asyncio
 import json
-from urllib.parse import parse_qs
 from unittest.mock import AsyncMock
 
 import httpx
@@ -145,14 +144,21 @@ async def test_workflow_write_is_not_retried_on_session_expiration(monkeypatch):
     client.cookie_header = AsyncMock(return_value="kdservice-sessionid=test")
     client.current_user_id = AsyncMock(return_value=103412)
     with pytest.raises(httpx.HTTPStatusError):
-        await client.workflow_audit({"FormId": "BD_MATERIAL", "Numbers": ["TEST_MATERIAL"], "UserId": 103412, "ApprovalType": 1, "Disposition": "test"}, context())
+        await client.workflow_audit({"FormId": "SAL_OUTSTOCK", "Ids": "121237", "UserId": 103412, "ApprovalType": 1, "Disposition": "test"}, context())
     assert len(seen) == 1
     assert seen[0].url.path.endswith("DynamicFormService.WorkflowAudit.common.kdsvc")
-    assert seen[0].headers["Content-Type"].startswith("application/x-www-form-urlencoded")
-    form = parse_qs(seen[0].content.decode("utf-8"))
-    body = json.loads(form["data"][0])
+    assert seen[0].headers["Content-Type"].startswith("application/json")
+    envelope = json.loads(seen[0].content)
+    assert envelope["format"] == 1
+    assert envelope["useragent"] == "ApiClient"
+    assert envelope["rid"]
+    assert envelope["timestamp"]
+    assert envelope["v"] == "1.0"
+    parameters = json.loads(envelope["parameters"])
+    assert len(parameters) == 1
+    body = json.loads(parameters[0])
     assert body == {
-        "FormId": "BD_MATERIAL", "Numbers": ["TEST_MATERIAL"], "UserId": 103412,
+        "FormId": "SAL_OUTSTOCK", "Ids": "121237", "UserId": 103412,
         "ApprovalType": 1, "Disposition": "test",
     }
 
