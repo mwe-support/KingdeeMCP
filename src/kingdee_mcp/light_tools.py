@@ -713,7 +713,7 @@ def workflow_action_schema() -> dict[str, Any]:
         {
             "task_id": string_prop("本人工作流待办 task_id，必须先查询并核对任务", required=True),
             "form_id": string_prop("可选：校验关联表单编码", ""),
-            "bill_id": string_prop("可选：校验单据 FID 并按内码提交", ""),
+            "bill_id": string_prop("可选：校验单据 FID；审批仍按待办单据编码提交", ""),
             "action": {"type": "string", "enum": ["approve", "reject"], "default": "approve"},
             "opinion": string_prop("实际提交到金蝶工作流的审批意见，最多1000字符", ""),
         },

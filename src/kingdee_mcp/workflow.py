@@ -175,8 +175,6 @@ class WorkflowService:
                 model = viewed.get("Result", {}).get("Result", {})
                 if str(model.get("Number") or model.get("BillNo") or model.get("FBillNo") or "") != before["bill_number"]:
                     raise ValueError("bill_id does not match the task")
-                payload.pop("Numbers")
-                payload["Ids"] = str(args["bill_id"])
             if before["post_id"]:
                 payload["PostId"] = int(before["post_id"])
             try:

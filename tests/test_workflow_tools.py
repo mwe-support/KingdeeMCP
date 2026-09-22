@@ -92,8 +92,8 @@ async def test_workflow_bill_id_accepts_document_view_billno():
     result = await build_core_read_tools(client)["kingdee_workflow_approve"].handler(
         {"task_id": TASK, "bill_id": "121237", "opinion": "verified test"}, context())
     assert result["verified"] is True
-    assert client.calls[0]["Ids"] == "121237"
-    assert "Numbers" not in client.calls[0]
+    assert client.calls[0]["Numbers"] == ["XSCKD009756"]
+    assert "Ids" not in client.calls[0]
 
 
 @pytest.mark.asyncio
@@ -144,7 +144,7 @@ async def test_workflow_write_is_not_retried_on_session_expiration(monkeypatch):
     client.cookie_header = AsyncMock(return_value="kdservice-sessionid=test")
     client.current_user_id = AsyncMock(return_value=103412)
     with pytest.raises(httpx.HTTPStatusError):
-        await client.workflow_audit({"FormId": "SAL_OUTSTOCK", "Ids": "121237", "UserId": 103412, "ApprovalType": 1, "Disposition": "test"}, context())
+        await client.workflow_audit({"FormId": "SAL_OUTSTOCK", "Numbers": ["XSCKD009756"], "UserId": 103412, "ApprovalType": 1, "Disposition": "test"}, context())
     assert len(seen) == 1
     assert seen[0].url.path.endswith("DynamicFormService.WorkflowAudit.common.kdsvc")
     assert seen[0].headers["Content-Type"].startswith("application/json")
@@ -158,7 +158,7 @@ async def test_workflow_write_is_not_retried_on_session_expiration(monkeypatch):
     assert len(parameters) == 1
     body = json.loads(parameters[0])
     assert body == {
-        "FormId": "SAL_OUTSTOCK", "Ids": "121237", "UserId": 103412,
+        "FormId": "SAL_OUTSTOCK", "Numbers": ["XSCKD009756"], "UserId": 103412,
         "ApprovalType": 1, "Disposition": "test",
     }
 
